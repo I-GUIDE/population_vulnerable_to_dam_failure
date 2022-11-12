@@ -70,9 +70,9 @@ def polygonize_fim(rasterfile_path):
     inund_per_cls.reset_index(inplace=True)
 
     # remove all temp files
-    # os.remove(resample_10_path)
-    # os.remove(reclass_file)
-    # os.remove(geojson_out)
+    os.remove(resample_10_path)
+    os.remove(reclass_file)
+    os.remove(geojson_out)
 
     # inundation_per_cls: GeoDataFrame 
     return inund_per_cls
@@ -120,7 +120,7 @@ def calculate_ellipse(rasterfile_path):
     ellipse_rotate = shapely.affinity.rotate(ellipse, alpha)
 
     # remove all temp files
-    # os.remove(resample_100_path)
+    os.remove(resample_100_path)
     
     return ellipse_rotate, points_ary
     
@@ -198,19 +198,28 @@ def extract_inundated_area_geoid_unpacker(args):
 
 ##### ------------ Main Code Starts Here ------------ #####
 
-PROCESSORS = 4
+PROCESSORS = 2
 cwd = os.getcwd()
 input_path = 'NID_FIM_TAS_Breach'
 scenarios = {'loadCondition': 'TAS', 'breachCondition': 'F'}
-output_path = 'NID_FIM_TAS_Breach'
+output_path = 'output'
 
 # Load the census block 
 census_gdf = gpd.read_file(os.path.join(cwd, 'census_geometry', 'tl_2020_block_texas.geojson'))
-
 # census_gdf = gpd.read_file(os.path.join(cwd, 'census_geometry', 'tl_2020_tabblock20.geojson'))
-census_gdf.rename(columns={'geoid': 'GEOID'}, inplace=True) # Comment this line for `tl_2020_tabblock20.geojson`
+
+# Clean census_gdf for having GEOID column and geometry in EPSG:4326
+if 'GEOID' in census_gdf.columns:
+    pass
+elif 'geoid' in census_gdf.columns:
+    census_gdf.rename(columns={'geoid': 'GEOID'}, inplace=True) # Comment this line for `tl_2020_tabblock20.geojson`
+else:
+    raise AttributeError('either GEOID or geoid column is necessary')
+
+if census_gdf.crs != 'EPSG:4326':
+    census_gdf = census_gdf.to_crs(epsg=4326)
+
 census_gdf = census_gdf[['GEOID', 'geometry']]
-census_gdf = census_gdf.to_crs(epsg=4326)
 
 # Find the list of dams in the input folder
 fed_dams = requests.get('https://fim.sec.usace.army.mil/ci/fim/getAllEAPStructure').json()
@@ -219,8 +228,7 @@ dois = fd_df['ID'].to_list()
 print(f"Total of {len(dois)} dams")
 
 dois = [doi for doi in dois if os.path.exists(os.path.join(cwd, input_path, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_{doi}.tiff"))]
-dois = [doi for doi in dois if doi[0:2] == 'TX']
-dois = ['TX00004', 'TX00006', 'TX00008', 'TX00012']
+dois = ['TX00004', 'TX00006']
 print(f"Dam of Interest counts: {len(dois)}")
 print(dois)
 
@@ -234,7 +242,7 @@ if __name__ == "__main__":
     results = pool.map(extract_inundated_area_geoid_unpacker,
                             zip(itertools.repeat(input_path),
                                 itertools.repeat(census_gdf),
-                                dois, # Dam of interest
+                                dois, # list of DAM ID 
                                 itertools.repeat(scenarios))
                        )
 
