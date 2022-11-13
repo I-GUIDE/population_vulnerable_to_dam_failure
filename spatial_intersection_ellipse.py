@@ -1,4 +1,3 @@
-import rioxarray
 import qinfer
 import numpy as np
 import numpy.linalg as la
