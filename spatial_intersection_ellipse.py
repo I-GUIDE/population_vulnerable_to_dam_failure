@@ -78,24 +78,7 @@ def polygonize_fim(rasterfile_path):
     return inund_per_cls
 
     
-def calculate_ellipse(rasterfile_path):
-
-    # Extract target path and filename from the given raster file path
-    target_path = '/'.join(rasterfile_path.split('/')[:-1])
-    filename = rasterfile_path.split("/")[-1].split(".")[-2]
-
-    # Resample raster file to 100-times smaller
-    resample_100_path = resample_raster(rasterfile_path, filename, target_path, rescale_factor=100)
-
-    # Load resampled inundation map
-    resample_inund_map = rioxarray.open_rasterio(resample_100_path, masked=True, parse_coordinates=True).squeeze('band', drop=True) 
-       
-    # Extract non-null raster cells to points
-    da_ = resample_inund_map.where(resample_inund_map != resample_inund_map.rio.encoded_nodata)  # -9999 is the null value in the provided inundation map
-    stacked_da_ = da_.stack(stacked_x=['y', 'x'])
-    points_ary = np.column_stack((stacked_da_[stacked_da_.notnull()].coords['x'], 
-                                  stacked_da_[stacked_da_.notnull()].coords['y'])
-                                )
+def calculate_ellipse_based_on_convex_hull(points_ary):
     
     # Calculate ellipse (MVEE; minimum-volume enclosing ellipse)
     A, centroid = qinfer.utils.mvee(points_ary)
@@ -118,11 +101,8 @@ def calculate_ellipse(rasterfile_path):
     circ = shapely.geometry.Point(centroid).buffer(0.5)
     ellipse  = shapely.affinity.scale(circ, ma_axis, mi_axis)
     ellipse_rotate = shapely.affinity.rotate(ellipse, alpha)
-
-    # remove all temp files
-    os.remove(resample_100_path)
     
-    return ellipse_rotate, points_ary
+    return ellipse_rotate
     
 
 def extract_inundated_area_geoid(input_dir, census_gdf, dam_id, scene):
@@ -163,7 +143,11 @@ def extract_inundated_area_geoid(input_dir, census_gdf, dam_id, scene):
     
     # Caclulate minimum-volume enclosing ellipse (mvee) of the inundation map to extract benchmark area
     print(f"{dam_id}: 3/4, Extracting benchmark area")
-    ellipse, points = calculate_ellipse(fim_path)
+
+    # Collecting points from convex hull of the inundation map
+    # These points will be used for calculating mvee 
+    convex_hull_pnts = np.array(fim_gdf.unary_union.convex_hull.exterior.coords)
+    ellipse = calculate_ellipse_based_on_convex_hull(convex_hull_pnts)
     ellipse_gdf = gpd.GeoDataFrame({'Dam_ID':f'{dam_id}'}, index=[0], geometry=[ellipse], crs='EPSG:4326')
     
     # Extract benchmark area (not inundated) intersecting with the ellipse
