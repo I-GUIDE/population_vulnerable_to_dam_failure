@@ -1,14 +1,11 @@
-import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 import geopandas as gpd
 import os
-from tqdm import tqdm
 import requests
 import esda
 import libpysal
-from scipy import stats
-
+import multiprocessing as mp
+import itertools
 
 
 def call_census_table(state_list, table, key):
@@ -39,9 +36,10 @@ def call_census_table(state_list, table, key):
     return result_df
 
 
-def census_data_of_fim_geoid(fim_geoid_, census_name, attr_dic, state_list):
+def census_data_of_fim_geoid(fim_geoid_, census_name, attr_dic, API_Key):
 
-    API_Key = 'fbcac1c2cc26d853b42c4674adf905e742d1cb2b'
+    # List of states that is associated with the dam failure
+    state_list = fim_geoid_.apply(lambda x:x['GEOID'][0:2], axis=1).unique()
 
     # Retrieve census data from API
     census_code = attr_dic[census_name]
@@ -82,15 +80,60 @@ def census_data_of_fim_geoid(fim_geoid_, census_name, attr_dic, state_list):
     return fim_geoid_
 
 
+def calculate_bivariate_Moran_I_and_LISA(dam_id, attr_dic, fim_geoid_gdf, dams_gdf):
+
+    input_cols = list(attr_dic.keys())
+    input_cols.extend(['Dam_ID', 'GEOID', 'Class', 'geometry'])
+    fim_geoid_local = fim_geoid_gdf.loc[fim_geoid_gdf['Dam_ID'] == dam_id, input_cols].reset_index(drop=True)
+    dam_local = dams_gdf.loc[dams_gdf['ID'] == dam_id].reset_index(drop=True)
+    
+    # Iterate through all census variables
+    for census_name, census_code in attr_dic.items():
+        # Local fim_geoid
+        fim_geoid_local_var = fim_geoid_local.loc[~fim_geoid_local[census_name].isna(), ['Dam_ID', 'GEOID', 'Class', census_name, 'geometry']].reset_index(drop=True)
+
+        # TODO: investigate proportional bandwidth or Kenel window for distance decay
+        # Calculate Bivaraite Moran's I & Local Moran's I
+        w = libpysal.weights.Queen.from_dataframe(fim_geoid_local_var)  # Adjacency matrix (Queen case)
+        bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)
+        bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
+        
+        # Enter results of Bivariate LISA into each census region
+        lm_dict = {1: 'HH', 2: 'LH', 3: 'LL', 4: 'HL'}
+        for idx in range(fim_geoid_local_var.shape[0]):
+            if bv_lm.p_sim[idx] < 0.05:
+                fim_geoid_local_var.loc[idx, f'LISA_{census_name}'] = lm_dict[bv_lm.q[idx]]
+            else:
+                fim_geoid_local_var.loc[idx, f'LISA_{census_name}'] = 'Not_Sig'
+        
+        fim_geoid_local_na = fim_geoid_local.loc[fim_geoid_local[census_name].isna(), ['Dam_ID', 'GEOID', 'Class', census_name, 'geometry']]
+        fim_geoid_local_na[f'LISA_{census_name}'] = 'NA'
+        fim_geoid_local_var = pd.concat([fim_geoid_local_var, fim_geoid_local_na]).reset_index(drop=True)       
+        fim_geoid_local = fim_geoid_local.merge(fim_geoid_local_var[['GEOID', f'LISA_{census_name}']], on='GEOID')
+                
+        # Enter Bivariate Moran's I result into each dam
+        dam_local[f'I_{census_name}'] = bv_mi.I
+        dam_local[f'pval_{census_name}'] = bv_mi.p_z_sim
+
+    return fim_geoid_local, dam_local
+
+
+def calculate_bivariate_Moran_I_and_LISA_unpacker(args):
+    return calculate_bivariate_Moran_I_and_LISA(*args)
+
+
+
 ########## Main code starts here ##########
 
-PROCESSORS = 2
+PROCESSORS = 4
 scenarios = {'loadCondition': 'TAS', 'breachCondition': 'F'}
 output_path = 'output'
 cwd = os.getcwd()
+API_Key = 'fbcac1c2cc26d853b42c4674adf905e742d1cb2b' # Census api key
 
 # Load spatial intersection results
 fim_geoid = gpd.read_file(os.path.join(cwd, output_path, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_fim_geoid.geojson"))
+print(fim_geoid.columns)
 
 # Import list of dams
 dams = requests.get('https://fim.sec.usace.army.mil/ci/fim/getAllEAPStructure').json()
@@ -111,53 +154,49 @@ census_attr_dic = {'no_hs_dip': 'group(B06009)',     # Percentage of people over
                     }
 
 
-# List of states that is associated with the dam failure
-state_list = fim_geoid.apply(lambda x:x['GEOID'][0:2], axis=1).unique()
-
 # Retrieve census data from API
 fim_geoid['GEOID_tract'] = fim_geoid.apply(lambda x:x['GEOID'][0:11], axis=1)
-for attr in tqdm(census_attr_dic.keys()):
-    fim_geoid = census_data_of_fim_geoid(fim_geoid, attr, census_attr_dic, state_list)
-    print(f"{attr} data is retrieved")
+print(fim_geoid.columns)
 
-# fim_geoid.to_file(os.path.join(cwd, output_path, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_fim_geoid_test.geojson"))
+for attr in census_attr_dic.keys():
+    fim_geoid = census_data_of_fim_geoid(fim_geoid, attr, census_attr_dic, API_Key)
+    print(f"{attr} data is retrieved")
 
 # Reproject fim_geoid to EPSG:5070, NAD83 / Conus Albers (meters)
 fim_geoid = fim_geoid.to_crs(epsg=5070)
 
-# Remove null value
-for attr in tqdm(census_attr_dic.keys()):
+# Replace not valid value (e.g., -666666) from census with nan value
+for attr in census_attr_dic.keys():
     fim_geoid[attr] = fim_geoid.apply(lambda x: float('nan') if x[attr] < 0 else x[attr], axis=1)
 
-# Calculate distance decay & adjacency between census blocks (Queens case)
-# TODO: investigate proportional bandwidth or Kenel window for distance decay
-# for dam in dams['ID']:
-#     for attr in tqdm(census_attr_dic.keys()):
+# dois = ['TX00004', 'TX00006', 'TX00018', 'TX00020']
+lm_cols = [f'LISA_{var}' for var in census_attr_dic.keys()]
+lm_cols.append('GEOID')
 
+if __name__ == "__main__":
+    # Empty GeoDataFrame for storing the results
+    fim_geoid_local = pd.DataFrame()
+    dams_result = pd.DataFrame()
+    dois = fim_geoid['Dam_ID'].unique()
 
-def calculate_bivariate_Moran_I_and_LISA(dam_id, census_name, fim_geoid_gdf, dams_gdf):
+    pool = mp.Pool(PROCESSORS)
+    results = pool.map(calculate_bivariate_Moran_I_and_LISA_unpacker,
+                            zip(dois, # list of DAM ID 
+                                itertools.repeat(census_attr_dic),
+                                itertools.repeat(fim_geoid),
+                                itertools.repeat(dams))
+                       )
 
-    # Local fim_geoid
-    fim_geoid_local = fim_geoid_gdf.loc[(fim_geoid_gdf['Dam_ID'] == dam_id) & (fim_geoid_gdf[census_name].notnull())].reset_index(drop=True)
+    pool.close()
 
-    # Calculate Bivaraite Moran's I & Local Moran's I
-    w = libpysal.weights.Queen.from_dataframe(fim_geoid_local)  # Adjacency matrix (Queen case)
-    bv_mi = esda.Moran_BV(fim_geoid_local['Class'], fim_geoid_local[census_name], w)
-    bv_lm = esda.Moran_Local_BV(fim_geoid_local['Class'], fim_geoid_local[census_name], w)
+    for result in results:
+        fim_geoid_local = pd.concat([fim_geoid_local, result[0]]).reset_index(drop=True)
+        dams_result = pd.concat([dams_result, result[1]]).reset_index(drop=True)
 
-    lm_dict = {1: 'HH', 2: 'LH', 3: 'LL', 4: 'HL'}
-    for idx in range(fim_geoid_local.shape[0]):
-        if bv_lm.p_sim[idx] < 0.05:
-            fim_geoid_local.loc[idx, f'LISA_{census_name}'] = lm_dict[bv_lm.q[idx]]
-        else:
-            fim_geoid_local.loc[idx, f'LISA_{census_name}'] = 'Not_Sig'
+    dams_result = gpd.GeoDataFrame(dams_result, geometry=gpd.points_from_xy(dams_result['LON'], dams_result['LAT'], crs="EPSG:4326"))
+    fim_geoid = fim_geoid.merge(fim_geoid_local[lm_cols], on='GEOID')
+    fim_geoid = fim_geoid.to_crs(epsg=4326)
 
-    dams_gdf.loc[dams_gdf['ID'] == dam_id, f'I_{census_name}'] = bv_mi.I
-    dams_gdf.loc[dams_gdf['ID'] == dam_id, f'P_val_{census_name}'] = bv_mi.p_z_sim
-
-    return fim_geoid_local, dams_gdf
-
-
-
-
+    dams_result.to_csv(os.path.join(cwd, output_path, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_dams_result.geojson"))
+    fim_geoid.to_file(os.path.join(cwd, output_path, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_fim_geoid_corr.geojson"))
 

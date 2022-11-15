@@ -181,7 +181,7 @@ def extract_inundated_area_geoid_unpacker(args):
 
 ##### ------------ Main Code Starts Here ------------ #####
 
-PROCESSORS = 2
+PROCESSORS = 4
 cwd = os.getcwd()
 input_path = 'NID_FIM_TAS_Breach'
 scenarios = {'loadCondition': 'TAS', 'breachCondition': 'F'}
@@ -211,7 +211,8 @@ dois = fd_df['ID'].to_list()
 print(f"Total of {len(dois)} dams")
 
 dois = [doi for doi in dois if os.path.exists(os.path.join(cwd, input_path, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_{doi}.tiff"))]
-dois = ['TX00004', 'TX00006']
+dois = [doi for doi in dois if doi[0:2] == 'TX']
+# dois = ['TX00004', 'TX00006', 'TX00018', 'TX00020']
 print(f"Dam of Interest counts: {len(dois)}")
 print(dois)
 
