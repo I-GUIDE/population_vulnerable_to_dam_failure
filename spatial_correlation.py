@@ -167,9 +167,6 @@ fim_geoid = fim_geoid.to_crs(epsg=5070)
 for attr in census_attr_dic.keys():
     fim_geoid[attr] = fim_geoid.apply(lambda x: float('nan') if x[attr] < 0 else x[attr], axis=1)
 
-# dois = ['TX00004', 'TX00006', 'TX00018', 'TX00020']
-
-
 if __name__ == "__main__":
     # Empty GeoDataFrame for storing the results
     corr_result = pd.DataFrame()
