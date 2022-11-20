@@ -158,7 +158,7 @@ def extract_fim_geoid(dam_id, scene, input_dir, tract_gdf):
         raise AttributeError('NO STATE is related to Inundation Mapping')
 
     # TODO: Remove line below
-    census_gdf.rename(columns={'GEOID_B': 'GEOID'}, inplace=True)
+    # census_gdf.rename(columns={'GEOID_B': 'GEOID'}, inplace=True)
     
     # Destination dataframe to save the results
     print(f"{dam_id}: Step 1, 3/4, Extracting GEOID of census blocks")
@@ -383,8 +383,7 @@ dois = fed_dams['ID'].to_list()
 dois = [doi for doi in dois if os.path.exists(os.path.join(cwd, input_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_{doi}.tiff"))]
 
 import random
-
-dois = random.choices(dois, k=12)
+dois = random.choices(dois, k=8)
 print(f"Dam of Interest counts: {len(dois)}")
 print(dois)
 
