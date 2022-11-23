@@ -213,87 +213,47 @@ def extract_fim_geoid(dam_id, scene, input_dir, tract_gdf):
     return fim_geoid_gdf, fim_gdf, ellipse_gdf
 
 
-def call_census_table(state_list, table, key):
+def call_census_table(state_list, table_name, key):
     
     result_df = pd.DataFrame()
     
     # querying at census tract level
     for state in state_list:
-        if table.startswith('group'):
-            address = f'https://api.census.gov/data/2020/acs/acs5?get=NAME,{table}&for=tract:*&in=state:{state}&in=county:*'
-        elif table.startswith('DP'):
-            address = f'https://api.census.gov/data/2020/acs/acs5/profile?get=NAME,{table}&for=tract:*&in=state:{state}&in=county:*'
-        elif table.startswith('S'):
-            address = f'https://api.census.gov/data/2020/acs/acs5/subject?get=NAME,{table}&for=tract:*&in=state:{state}&in=county:*'
+        if table_name.startswith('DP'):
+            address = f'https://api.census.gov/data/2020/acs/acs5/profile?get=NAME,{table_name}&for=tract:*&in=state:{state}&in=county:*'
+        elif table_name.startswith('S'):
+            address = f'https://api.census.gov/data/2020/acs/acs5/subject?get=NAME,{table_name}&for=tract:*&in=state:{state}&in=county:*'
+        elif table_name.startswith('B'):
+            address = f'https://api.census.gov/data/2020/acs/acs5?get=NAME,{table_name}&for=tract:*&in=state:{state}&in=county:*'
+        else:
+            raise AttributeError('Proper Table Name Is Needed.')
+            
         response = requests.get(f'{address}&key={key}').json()
         result_ = pd.DataFrame(response)
         
         result_.columns = response[0]
         result_.drop(0, axis=0, inplace=True)
         
-        if table.startswith('group'):
-            result_.drop(['NAME', 'state', 'county', 'tract'], axis=1, inplace=True) 
-        else:
-            result_.drop(['NAME'], axis=1, inplace=True) # When querying tract level data
-        
         result_df = pd.concat([result_, result_df]).reset_index(drop=True)
         
-    return result_df
+    # result_df = result_df.rename(columns={'GEO_ID':'GEOID_T'})
+    result_df['GEOID_T'] = result_df.apply(lambda x: x['state'] + x['county'] + x['tract'], axis=1)
+    result_df[table_name] = result_df[table_name].astype(float)
+        
+    return result_df[['GEOID_T', table_name]]
 
 
-def census_data_of_fim_geoid(fim_geoid_, census_name, attr_dic, API_Key):
+def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams_gdf):
 
-    # List of states that is associated with the dam failure
-    state_list = fim_geoid_.apply(lambda x:x['GEOID'][0:2], axis=1).unique()
-
-    # Retrieve census data from API
-    census_code = attr_dic[census_name]
-    census_table = call_census_table(state_list, census_code, API_Key)
-    
-    # Define GEOID for census tracts
-    if 'GEO_ID' in census_table.columns:
-        census_table['GEO_ID'] = census_table.apply(lambda x:x['GEO_ID'][9:], axis=1)
-        census_table['GEO_ID'] = census_table['GEO_ID'].astype(str)
-        census_table = census_table.rename(columns={'GEO_ID': 'GEOID_tract'})
-    else:
-        census_table['GEOID_tract'] = census_table.apply(lambda x:x['state'] + x['county'] + x ['tract'], axis=1)
-    
-    # Clean census data and merge with fim_geoid data
-    if census_code == 'group(B06009)': # No high school diploma: Persons (age 25+) with no high school diploma 
-        census_table[census_name] = census_table.apply(lambda x:round(int(x['B06009_002E']) / int(x['B06009_001E']) * 100.0) 
-                                                     if int(x['B06009_001E']) != 0 else 0, axis=1)
-    elif census_code == 'group(B17001)': # Poverty: persons below poverty estimate (not available at bg level)
-        census_table[census_name] = census_table.apply(lambda x:round(int(x['B17001_002E']) / int(x['B17001_001E']) * 100.0) 
-                                                     if int(x['B17001_001E']) != 0 else 0, axis=1)
-    elif census_code == 'group(B16005)': # Not proficient English: "NATIVITY BY LANGUAGE SPOKEN AT HOME BY ABILITY TO SPEAK ENGLISH FOR THE POPULATION 5 YEARS AND OVER"
-        census_table[census_name] = census_table.apply(lambda x:round((int(x['B16005_007E']) + int(x['B16005_008E']) +
-                                                                     int(x['B16005_012E']) + int(x['B16005_013E']) + 
-                                                                     int(x['B16005_017E']) + int(x['B16005_018E']) + 
-                                                                     int(x['B16005_022E']) + int(x['B16005_023E']) + 
-                                                                     int(x['B16005_029E']) + int(x['B16005_030E']) + 
-                                                                     int(x['B16005_034E']) + int(x['B16005_035E']) + 
-                                                                     int(x['B16005_039E']) + int(x['B16005_040E']) + 
-                                                                     int(x['B16005_044E']) + int(x['B16005_045E'])) 
-                                                                    / int(x['B16005_001E']) * 100.0) 
-                                                     if int(x['B16005_001E']) != 0 else 0, axis=1)
-    else:
-        census_table.rename(columns={census_code: census_name}, inplace=True)
-
-    census_table[census_name] = census_table[census_name].astype(float)   
-    fim_geoid_ = fim_geoid_.merge(census_table[['GEOID_tract', census_name]], on='GEOID_tract')
-    
-    return fim_geoid_
-
-
-def calculate_bivariate_Moran_I_and_LISA(dam_id, attr_dic, fim_geoid_gdf, dams_gdf):
-
-    input_cols = list(attr_dic.keys())
+    input_cols = list(census_dic.keys())
     input_cols.extend(['Dam_ID', 'GEOID', 'Class', 'geometry'])
     fim_geoid_local = fim_geoid_gdf.loc[fim_geoid_gdf['Dam_ID'] == dam_id, input_cols].reset_index(drop=True)
     dam_local = dams_gdf.loc[dams_gdf['ID'] == dam_id].reset_index(drop=True)
-    
+
     # Iterate through all census variables
-    for census_name, census_code in attr_dic.items():
+    for census_name in census_dic.keys():
+        new_col_name = census_name.split("_")[1]
+        
         # Local fim_geoid
         fim_geoid_local_var = fim_geoid_local.loc[~fim_geoid_local[census_name].isna(), ['Dam_ID', 'GEOID', 'Class', census_name, 'geometry']].reset_index(drop=True)
 
@@ -302,66 +262,87 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, attr_dic, fim_geoid_gdf, dams_g
         w = libpysal.weights.Queen.from_dataframe(fim_geoid_local_var)  # Adjacency matrix (Queen case)
         bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)
         bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
-        
+
         # Enter results of Bivariate LISA into each census region
         lm_dict = {1: 'HH', 2: 'LH', 3: 'LL', 4: 'HL'}
         for idx in range(fim_geoid_local_var.shape[0]):
             if bv_lm.p_sim[idx] < 0.05:
-                fim_geoid_local_var.loc[idx, f'LISA_{census_name}'] = lm_dict[bv_lm.q[idx]]
+                fim_geoid_local_var.loc[idx, f'LISA_{new_col_name}'] = lm_dict[bv_lm.q[idx]]
             else:
-                fim_geoid_local_var.loc[idx, f'LISA_{census_name}'] = 'Not_Sig'
-        
+                fim_geoid_local_var.loc[idx, f'LISA_{new_col_name}'] = 'Not_Sig'
+
         fim_geoid_local_na = fim_geoid_local.loc[fim_geoid_local[census_name].isna(), ['Dam_ID', 'GEOID', 'Class', census_name, 'geometry']]
-        fim_geoid_local_na[f'LISA_{census_name}'] = 'NA'
+        fim_geoid_local_na[f'LISA_{new_col_name}'] = 'NA'
         fim_geoid_local_var = pd.concat([fim_geoid_local_var, fim_geoid_local_na]).reset_index(drop=True)       
-        fim_geoid_local = fim_geoid_local.merge(fim_geoid_local_var[['GEOID', f'LISA_{census_name}']], on='GEOID')
-                
+        fim_geoid_local = fim_geoid_local.merge(fim_geoid_local_var[['GEOID', f'LISA_{new_col_name}']], on='GEOID')
+
         # Enter Bivariate Moran's I result into each dam
-        dam_local[f'I_{census_name}'] = bv_mi.I
-        dam_local[f'pval_{census_name}'] = bv_mi.p_z_sim
+        dam_local[f'MI_{new_col_name}'] = bv_mi.I
+        dam_local[f'pval_{new_col_name}'] = bv_mi.p_z_sim
 
     return dam_local, fim_geoid_local
 
 
-def spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, attr_dic, API_Key):
+def spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, API_Key):
     
     # Retrieve census data from API
     print(f"{dam_id}: Step 2, 1/2, Retrieving census data")
-    fim_geoid_gdf['GEOID_tract'] = fim_geoid_gdf.apply(lambda x:x['GEOID'][0:11], axis=1)
-    for attr in attr_dic.keys():
-        fim_geoid_gdf = census_data_of_fim_geoid(fim_geoid_gdf, attr, attr_dic, API_Key)
+    fim_geoid_gdf['GEOID_T'] = fim_geoid_gdf.apply(lambda x:x['GEOID'][0:11], axis=1)
 
+    # List of states that is associated with the dam failure
+    state_list = fim_geoid_gdf.apply(lambda x:x['GEOID'][0:2], axis=1).unique()
+
+    cols = list(census_info.keys())
+    cols.append('GEOID_T')
+
+    attr_df = pd.DataFrame({'GEOID_T':fim_geoid_gdf['GEOID_T'].unique().tolist()})
+    for attr in census_dic.keys(): # attr: svi-related census abbriviation on the final table
+        if type(census_dic[attr]) == str:
+            temp_table = call_census_table(state_list, census_dic[attr], API_Key)
+            attr_df = attr_df.merge(temp_table, on='GEOID_T')
+            attr_df = attr_df.rename(columns={census_dic[attr]: attr})
+        else:
+            for table in census_dic[attr][0]: # Retrieve numerator variables
+                temp_table = call_census_table(state_list, table, API_Key)
+                attr_df = attr_df.merge(temp_table, on='GEOID_T')
+
+            temp_table = call_census_table(state_list, census_dic[attr][1], API_Key) # Retrieve denominator variable
+            attr_df = attr_df.merge(temp_table, on='GEOID_T')
+            
+            # Calculate the ratio of each variable
+            attr_df[attr] = attr_df[census_dic[attr][0]].sum(axis=1) / attr_df[census_dic[attr][1]] * 100
+
+        # Remove intermediate columns used for SVI related census calculation
+        attr_df = attr_df[attr_df.columns.intersection(cols)]
+        
         # Replace not valid value (e.g., -666666) from census with nan value
-        fim_geoid_gdf[attr] = fim_geoid_gdf.apply(lambda x: float('nan') if x[attr] < 0 else x[attr], axis=1)
-        # print(f"-- Census Data ({attr}) is retrieved")
+        attr_df[attr] = attr_df.apply(lambda x: float('nan') if x[attr] < 0 else x[attr], axis=1)
+
+    # Merge census data with fim_geoid_gdf
+    fim_geoid_gdf = fim_geoid_gdf.merge(attr_df, on='GEOID_T')
 
     # Reproject fim_geoid to EPSG:5070, NAD83 / Conus Albers (meters)
     fim_geoid_gdf = fim_geoid_gdf.to_crs(epsg=5070)
        
     # Calculate Bivariate Moran's I & Local Moran's I
     print(f"{dam_id}: Step 2, 2/2, Calculating Moran\'s I and LISA")
-    mi_gdf, lm_gdf = calculate_bivariate_Moran_I_and_LISA(dam_id, attr_dic, fim_geoid_gdf, fd_gdf)
+    mi_gdf, lm_gdf = calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, fd_gdf)
 
     return mi_gdf, lm_gdf
 
 
-def population_vulnerable_to_fim(dam_id, scene, input_dir, fd_gdf, tract_gdf, attr_dic, API_Key):
+def population_vulnerable_to_fim(dam_id, scene, input_dir, fd_gdf, tract_gdf, census_dic, API_Key):
     # Step 1: Compute GEOID of inundated and non-inundated regions from NID inundation mapping of each dam
     fim_geoid_gdf, fim_gdf, ellipse_gdf = extract_fim_geoid(dam_id, scene, input_dir, tract_gdf)
 
     # Step 2: Spatial correlation between fim and census data
-    mi_gdf, lm_gdf = spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, attr_dic, API_Key)
+    mi_gdf, lm_gdf = spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, API_Key)
 
     return fim_gdf, ellipse_gdf, mi_gdf, lm_gdf
 
 
 def population_vulnerable_to_fim_unpacker(args):
     return population_vulnerable_to_fim(*args)
-
-
-
-
-########## Main code starts here ##########
 
 
 ##### ------------ Main Code Starts Here ------------ #####
@@ -382,25 +363,48 @@ dois = fed_dams['ID'].to_list()
 # TODO: Uncomment the following line to run the code for all dams
 dois = [doi for doi in dois if os.path.exists(os.path.join(cwd, input_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_{doi}.tiff"))]
 
-import random
-dois = random.choices(dois, k=8)
-print(f"Dam of Interest counts: {len(dois)}")
+# dois = dois[0:120]
+dois = ['NM00002', 'CA10019', 'MS01494', 'CA10244']
+# import random
+# dois = random.choices(dois, k=4)
+# print(f"Dam of Interest counts: {len(dois)}")
 print(dois)
 
 
 # Census tract to find state associated with fim of each dam
 tract = gpd.read_file(os.path.join(cwd, 'census_geometry', 'census_tract_from_api.geojson'))
 
-# List of census data to be retrieved. 
-# TODO: add more census data
-census_attr_dic = {'no_hs_dip': 'group(B06009)',     # Percentage of people over 25 without high school diploma
-                    'poverty': 'group(B17001)',      # Percentage of people below the poverty level
-                    'unprof_eng': 'group(B16005)',   # Percentage of resident with no proficient English
-                    'mobile_home': 'DP04_0014PE',    # Percentage of mobile homes estimate
-                    'no_vehicle': 'DP04_0058PE',     # Percentage of housholds without vehicle available estimate
-                    'unemployed': 'DP03_0009PE',   # Unemployment Rate estimate
-                    'age65': 'S0101_C02_030E'        # Percentage of person aged 65 and older estimate
-                    }
+# List of census data to be retrieved. The key is the census data abbreviation used in the final table.
+# str: single variable
+# list: [[To be summed and set as numerator], demonimator]  
+census_info = {
+                "EP_POV150" : [['S1701_C01_040E'], 'S1701_C01_001E'],
+                "EP_UNEMP"  : 'DP03_0009PE',
+                "EP_HBURD"  : [['S2503_C01_028E', 'S2503_C01_032E', 'S2503_C01_036E', 'S2503_C01_040E'], 
+                            'S2503_C01_001E'],
+                "EP_NOHSDP" : 'S0601_C01_033E',
+                "EP_UNINSUR" : 'S2701_C05_001E',
+                "EP_AGE65" : 'S0101_C02_030E',
+                "EP_AGE17" : [['B09001_001E'], 
+                            'S0601_C01_001E'],
+                "EP_DISABL" : 'DP02_0072PE',
+                "EP_SNGPNT" : [['B11012_010E', 'B11012_015E'], 'DP02_0001E'],
+                "EP_LIMENG" : [['B16005_007E', 'B16005_008E', 'B16005_012E', 'B16005_013E', 'B16005_017E', 'B16005_018E', 
+                                'B16005_022E', 'B16005_023E', 'B16005_029E', 'B16005_030E', 'B16005_034E', 'B16005_035E',
+                                'B16005_039E', 'B16005_040E', 'B16005_044E', 'B16005_045E'], 
+                            'B16005_001E'],
+                "EP_MINRTY" : [['DP05_0071E', 'DP05_0078E', 'DP05_0079E', 'DP05_0080E', 
+                                'DP05_0081E', 'DP05_0082E', 'DP05_0083E'],
+                            'S0601_C01_001E'],
+                "EP_MUNIT" : [['DP04_0012E', 'DP04_0013E'], 
+                            'DP04_0001E'],
+                "EP_MOBILE" : 'DP04_0014PE',
+                "EP_CROWD" : [['DP04_0078E', 'DP04_0079E'], 
+                            'DP04_0002E'],
+                "EP_NOVEH" : 'DP04_0058PE',
+                "EP_GROUPQ": [['B26001_001E'], 
+                            'S0601_C01_001E'],
+}
 
 
 if __name__ == "__main__":
@@ -410,7 +414,6 @@ if __name__ == "__main__":
     ellipse_output = pd.DataFrame() # Ellipse of inundation mapping
     mi_result = pd.DataFrame() # Bivariate Moran's I result
     lm_result = pd.DataFrame() # Bivariate LISA result
-
 
     pool = mp.Pool(PROCESSORS)
 
@@ -427,7 +430,7 @@ if __name__ == "__main__":
                                 itertools.repeat(input_dir), # Input directory of NID inundation mapping
                                 itertools.repeat(fed_dams), # GeoDataFrame of all dams
                                 itertools.repeat(tract), # GeoDataFrame of census tracts
-                                itertools.repeat(census_attr_dic), # Dictionary of census data to be retrieved
+                                itertools.repeat(census_info), # Dictionary of census data to be retrieved
                                 itertools.repeat(API_Key) # Census API key
                                 )
                        )
