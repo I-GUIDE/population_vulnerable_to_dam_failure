@@ -98,8 +98,8 @@ def DamFIMInput_unpacker(dam_id, scenarios, target_path):
     return DamFIMInput(dam_id, scenarios, target_path).get()
 
 
-scenarios = {'loadCondition': 'TAS', 'breachCondition': 'F'}
-output_path = 'NID_FIM_TAS_Breach'
+scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
+output_path = 'NID_FIM_MH_Breach'
 cwd = os.getcwd()
 
 # Find the list of dams that have MH breach scenarios

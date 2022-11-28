@@ -359,12 +359,8 @@ fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'
 dois = fed_dams['ID'].to_list()
 # TODO: Uncomment the following line to run the code for all dams
 dois = [doi for doi in dois if os.path.exists(os.path.join(cwd, input_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_{doi}.tiff"))]
-
-# dois = dois[0:120]
-dois = ['NM00002', 'CA10019', 'MS01494', 'CA10244']
-# import random
-# dois = random.choices(dois, k=4)
-# print(f"Dam of Interest counts: {len(dois)}")
+import random
+dois = random.choices(dois, k=4)
 print(dois)
 
 
