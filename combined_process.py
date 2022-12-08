@@ -361,6 +361,7 @@ dois = fed_dams['ID'].to_list()
 dois = [doi for doi in dois if os.path.exists(os.path.join(cwd, input_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_{doi}.tiff"))]
 import random
 dois = random.choices(dois, k=4)
+dois = ['TX00009', 'TX00010', 'TX00011', 'TX00012'] 
 print(dois)
 
 
