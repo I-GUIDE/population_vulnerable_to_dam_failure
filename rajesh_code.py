@@ -34,8 +34,6 @@ class ExtractInundationCensusTracts(): # GeoEDFPlugin):
         # list to hold all the parameter names; will be accessed in super to 
         # construct dependency graph
         self.provided_params = self.__required_params + self.__optional_params
-        print(self.provided_params)
-        print(kwargs)
         
         # check that all required params have been provided
         for param in self.__required_params:
@@ -112,7 +110,7 @@ class ExtractInundationCensusTracts(): # GeoEDFPlugin):
         filename = rasterfile.split("/")[-1].split(".")[-2]
             
         # resample the raster file
-        resample_10_path = self.resample_raster(rasterfile, filename, rescale_factor=10)
+        resample_10_path = self.resample_raster(rasterfile, filename, rescale_factor=1)
             
         # now reclassify raster
         water_lvl = [0, 2, 6, 15, np.inf]  # Original inundation map value (underwater in feet)
@@ -317,7 +315,7 @@ class ExtractInundationCensusTracts(): # GeoEDFPlugin):
         dam_ids = self.dam_ids
 
         # try:
-        pool = mp.Pool(1)
+        pool = mp.Pool(4)
         results = pool.map(self.extract_fim_geoid_unpakcer,
                         zip(dam_ids, # List of Dam_ID
                             itertools.repeat(scene), # Dam failure scenario
@@ -328,20 +326,17 @@ class ExtractInundationCensusTracts(): # GeoEDFPlugin):
                 
         # merge results
         for result in results:
-            fim_output = pd.concat([fim_output, result[0]]).reset_index(drop=True)
-            ellipse_output = pd.concat([ellipse_output, result[1]]).reset_index(drop=True)
-            mi_result = pd.concat([mi_result, result[2]]).reset_index(drop=True)
-            # lm_result = pd.concat([lm_result, result[3]]).reset_index(drop=True)
-                    
-        fim_output.to_file(os.path.join(self.target_path, f"{scene['loadCondition']}_{scene['breachCondition']}_fim.geojson"), driver='GeoJSON')
-        ellipse_output.to_file(os.path.join(self.target_path, f"{scene['loadCondition']}_{scene['breachCondition']}_ellipse.geojson"), driver='GeoJSON')
-        mi_result.to_file(os.path.join(self.target_path, f"{scene['loadCondition']}_{scene['breachCondition']}_mi.geojson"), driver='GeoJSON')
-        # lm_result.to_file(os.path.join(self.target_path, f"{scene['loadCondition']}_{scene['breachCondition']}_lm.geojson"), driver='GeoJSON')
-
-        # except:
-        #     raise AttributeError("Error occurred when processing inundation maps for census tracts")
-            # raise GeoEDFError("Error occurred when processing inundation maps for census tracts")
+            lm_result = pd.concat([lm_result, result[0]]).reset_index(drop=True)
+            fim_output = pd.concat([fim_output, result[1]]).reset_index(drop=True)
+            ellipse_output = pd.concat([ellipse_output, result[2]]).reset_index(drop=True)
+            # mi_result = pd.concat([mi_result, result[2]]).reset_index(drop=True)
             
+                    
+        lm_result.to_file(os.path.join(self.target_path, f"{scene['loadCondition']}_{scene['breachCondition']}_lm_local_verify.geojson"), driver='GeoJSON')
+        ellipse_output.to_file(os.path.join(self.target_path, f"{scene['loadCondition']}_{scene['breachCondition']}_ellipse_local_verify.geojson"), driver='GeoJSON')
+        fim_output.to_file(os.path.join(self.target_path, f"{scene['loadCondition']}_{scene['breachCondition']}_fim_local_verify.geojson"), driver='GeoJSON')
+        # lm_result.to_file(os.path.join(self.target_path, f"{scene['loadCondition']}_{scene['breachCondition']}_lm_local_verify.geojson"), driver='GeoJSON')
+
 
 breach_condition = 'F'
 load_condition = 'TAS'
@@ -350,12 +345,9 @@ processor_dict = {'ExtractInundationCensusTracts':
                               {'breach_condition': breach_condition,
                                'load_condition': load_condition,
                                'floodmap_path': './NID_FIM_'+load_condition+'_'+breach_condition,
-                               'dam_ids': ['TX00009'],
-                               'target_path': './NID_FIM_'+load_condition+'_'+breach_condition }
+                               'dam_ids': ['TX00009', 'TX00010', 'TX00011', 'TX00012'],
+                               'target_path': './output' }
                                }
-
-                
-print(processor_dict['ExtractInundationCensusTracts'])
 
 
 if __name__ == "__main__":
