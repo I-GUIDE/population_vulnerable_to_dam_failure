@@ -86,6 +86,7 @@ class ExtractInundationCensusTracts(): # GeoEDFPlugin):
                 yres = raster_meta['geoTransform'][5]
                 xres = xres * rescale_factor
                 yres = yres * rescale_factor
+                # print('Null value: ', raster_meta['bands'][0]['noDataValue'])
             else:
                 raise AttributeError('Error determining pixel size for raster file')
                 # raise GeoEDFError('Error determining pixel size for raster file')
