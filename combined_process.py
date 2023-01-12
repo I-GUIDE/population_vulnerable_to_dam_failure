@@ -44,7 +44,7 @@ def polygonize_fim(rasterfile_path):
     filename = rasterfile_path.split("/")[-1].split(".")[-2]
 
     # Resample raster file to 10-times smaller
-    resample_10_path = resample_raster(rasterfile_path, filename, target_path, rescale_factor=10)
+    resample_10_path = resample_raster(rasterfile_path, filename, target_path, rescale_factor=1)
 
     # Reclassify raster
     '''
@@ -346,7 +346,7 @@ def population_vulnerable_to_fim_unpacker(args):
 
 PROCESSORS = 4
 cwd = os.getcwd()
-input_dir = 'NID_FIM_TAS_Breach'
+input_dir = 'NID_FIM_TAS_F'
 scenarios = {'loadCondition': 'TAS', 'breachCondition': 'F'}
 output_dir = 'output'
 API_Key = 'fbcac1c2cc26d853b42c4674adf905e742d1cb2b' # Census api key
@@ -358,9 +358,9 @@ fed_dams = pd.DataFrame(fed_dams)
 fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
 dois = fed_dams['ID'].to_list()
 # TODO: Uncomment the following line to run the code for all dams
-dois = [doi for doi in dois if os.path.exists(os.path.join(cwd, input_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_{doi}.tiff"))]
-import random
-dois = random.choices(dois, k=4)
+# dois = [doi for doi in dois if os.path.exists(os.path.join(cwd, input_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_{doi}.tiff"))]
+# import random
+# dois = random.choices(dois, k=4)
 dois = ['TX00009', 'TX00010', 'TX00011', 'TX00012'] 
 print(dois)
 

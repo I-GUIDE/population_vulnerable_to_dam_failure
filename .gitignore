@@ -8,6 +8,7 @@
 Info_for_Rajesh.docx
 /output/
 /SVI2020_US/
+data_plot
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -146,3 +147,10 @@ plot_batch_result_original_output.ipynb
 plot_batch_result_Rajesh_local_test_copy.ipynb
 plot_batch_result_Rajesh_local_test.ipynb
 plot_batch_result_Rajesh_output.ipynb
+plot_batch_result_high_res.ipynb
+plot_batch_result_Rajesh_new.ipynb
+plot_batch_result_test-Copy1.ipynb
+plot_batch_result_test.ipynb
+plot_batch_result.ipynb
+plot_batch_result_test.ipynb
+plot_batch_result_test.ipynb
