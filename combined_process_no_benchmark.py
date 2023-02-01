@@ -9,6 +9,7 @@ import itertools
 import pygeos
 import subprocess
 import json
+import sys
 
 
 def resample_raster(rasterfile_path, filename, target_path, rescale_factor):
@@ -39,7 +40,7 @@ def polygonize_fim(rasterfile_path):
     filename = rasterfile_path.split("/")[-1].split(".")[-2]
 
     # Resample raster file to 10-times smaller
-    resample_10_path = resample_raster(rasterfile_path, filename, target_path, rescale_factor=10)
+    resample_10_path = resample_raster(rasterfile_path, filename, target_path, rescale_factor=4)
 
     # Reclassify raster
     '''
@@ -295,22 +296,21 @@ def population_vulnerable_to_fim_unpacker(args):
 PROCESSORS = 4
 cwd = os.getcwd()
 
+# How many dams will be run for each sbatch submission
+iter_num = int(sys.argv[1])
+dam_count = 10
+
 scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
 input_dir = f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}'
-output_dir = f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results'
+output_dir = f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results/{iter_num}'
 API_Key = 'fbcac1c2cc26d853b42c4674adf905e742d1cb2b' # Census api key
 
-
 # Find the list of dams in the input folder
-fed_dams = requests.get('https://fim.sec.usace.army.mil/ci/fim/getAllEAPStructure').json()
-fed_dams = pd.DataFrame(fed_dams)
-fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
+fed_dams = pd.read_csv('./nid_available_scenario.csv')
+fed_dams = fed_dams.loc[fed_dams[f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_size'] > 0]
+fed_dams = fed_dams.sort_values(f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_size", ignore_index=True)
 dois = fed_dams['ID'].to_list()
-# TODO: Uncomment the following line to run the code for all dams
-dois = [doi for doi in dois if os.path.exists(os.path.join(cwd, input_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_{doi}.tiff"))]
-# import random
-# dois = random.choices(dois, k=4)
-dois = ['TX00009', 'TX00010', 'TX00011', 'TX00012'] 
+dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
 print(dois)
 
 # Census tract to find state associated with fim of each dam
@@ -353,7 +353,6 @@ if __name__ == "__main__":
 
     # Empty GeoDataFrame for storing the results
     fim_output = pd.DataFrame() # GEOID of inundated and non-inundated regions 
-    ellipse_output = pd.DataFrame() # Ellipse of inundation mapping
     mi_result = pd.DataFrame() # Bivariate Moran's I result
     lm_result = pd.DataFrame() # Bivariate LISA result
 
@@ -362,7 +361,6 @@ if __name__ == "__main__":
     '''
     ## Results overview
     fim_gdf: GEOID of inundated and non-inundated regions
-    ellipse_gdf: Ellipse of inundation mapping
     mi_gdf: Bivariate Moran's I result
     lm_gdf: Bivariate LISA result
     '''
@@ -383,14 +381,12 @@ if __name__ == "__main__":
 
     for result in results:
         fim_output = pd.concat([fim_output, result[0]]).reset_index(drop=True)
-        ellipse_output = pd.concat([ellipse_output, result[1]]).reset_index(drop=True)
-        mi_result = pd.concat([mi_result, result[2]]).reset_index(drop=True)
-        lm_result = pd.concat([lm_result, result[3]]).reset_index(drop=True)
+        mi_result = pd.concat([mi_result, result[1]]).reset_index(drop=True)
+        lm_result = pd.concat([lm_result, result[2]]).reset_index(drop=True)
 
     lm_result = lm_result.to_crs(epsg=4326)
 
     fim_output.to_file(os.path.join(cwd, output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_fim.geojson"), driver='GeoJSON')
-    ellipse_output.to_file(os.path.join(cwd, output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_ellipse.geojson"), driver='GeoJSON')
     mi_result.to_file(os.path.join(cwd, output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_mi.geojson"), driver='GeoJSON')
     lm_result.to_file(os.path.join(cwd, output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_lm.geojson"), driver='GeoJSON')
 
