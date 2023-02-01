@@ -99,7 +99,7 @@ def DamFIMInput_unpacker(dam_id, scenarios, target_path):
 
 
 scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
-output_path = 'NID_FIM_MH_Breach'
+output_path = f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}'
 cwd = os.getcwd()
 
 # Find the list of dams that have MH breach scenarios
@@ -118,5 +118,5 @@ for doi in dois:
         continue
         
     print("Downloading %s" % doi)
-    DamFIMInput(dam_id=doi,scenarios='TAS Breach',target_path=os.path.join(cwd, output_path)).get()
+    DamFIMInput(dam_id=doi,scenarios=f"{scenarios['loadCondition']} Breach",target_path=os.path.join(cwd, output_path)).get()
 
