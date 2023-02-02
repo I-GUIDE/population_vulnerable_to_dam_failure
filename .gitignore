@@ -156,6 +156,8 @@ plot_batch_result_test.ipynb
 plot_batch_result.ipynb
 plot_batch_result_test.ipynb
 plot_batch_result_test.ipynb
-._.DS_Store
+*._.DS_Store
 ._MH_F_Results
 ._nid_available_scenario.csv
+*.out
+/MH_F_Results

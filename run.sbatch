@@ -1,6 +1,7 @@
 #!/bin/tcsh
 #SBATCH --job-name=dam
-#SBATCH -n 8
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
 #SBATCH --time=12:00:00
 #SBATCH --mem-per-cpu=16GB
 #SBATCH --mail-type=FAIL

@@ -298,7 +298,7 @@ cwd = os.getcwd()
 
 # How many dams will be run for each sbatch submission
 iter_num = int(sys.argv[1])
-dam_count = 10
+dam_count = 8
 
 scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
 input_dir = f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}'
@@ -309,6 +309,7 @@ API_Key = 'fbcac1c2cc26d853b42c4674adf905e742d1cb2b' # Census api key
 fed_dams = pd.read_csv('./nid_available_scenario.csv')
 fed_dams = fed_dams.loc[fed_dams[f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_size'] > 0]
 fed_dams = fed_dams.sort_values(f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_size", ignore_index=True)
+fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
 dois = fed_dams['ID'].to_list()
 dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
 print(dois)
@@ -384,6 +385,10 @@ if __name__ == "__main__":
         mi_result = pd.concat([mi_result, result[1]]).reset_index(drop=True)
         lm_result = pd.concat([lm_result, result[2]]).reset_index(drop=True)
 
+    print(type(mi_result))
+    print(mi_result.columns.tolist())
+    print(type(lm_result))
+    print(lm_result.columns.tolist())
     lm_result = lm_result.to_crs(epsg=4326)
 
     fim_output.to_file(os.path.join(cwd, output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_fim.geojson"), driver='GeoJSON')
