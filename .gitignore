@@ -11,6 +11,14 @@ Info_for_Rajesh.docx
 /output/
 /SVI2020_US/
 data_plot
+plot_batch_result.ipynb
+*._.DS_Store
+._MH_F_Results
+._nid_available_scenario.csv
+*.out
+/MH_F_Results
+/MH_F_Results_1
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -142,22 +150,3 @@ dmypy.json
 # Pyre type checker
 .pyre/
 ellipse_intersection_example-Copy1.ipynb
-plot_batch_result.ipynb
-plot_batch_result-Copy1.ipynb
-plot_batch_result-Copy2.ipynb
-plot_batch_result_original_output.ipynb
-plot_batch_result_Rajesh_local_test_copy.ipynb
-plot_batch_result_Rajesh_local_test.ipynb
-plot_batch_result_Rajesh_output.ipynb
-plot_batch_result_high_res.ipynb
-plot_batch_result_Rajesh_new.ipynb
-plot_batch_result_test-Copy1.ipynb
-plot_batch_result_test.ipynb
-plot_batch_result.ipynb
-plot_batch_result_test.ipynb
-plot_batch_result_test.ipynb
-*._.DS_Store
-._MH_F_Results
-._nid_available_scenario.csv
-*.out
-/MH_F_Results

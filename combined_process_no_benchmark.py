@@ -49,7 +49,9 @@ def polygonize_fim(rasterfile_path):
     '''
     reclass_file = target_path + "/" + filename + "_reclass.tiff"
     outfile = "--outfile="+reclass_file
-    subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
+    # subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
+    # Reclassify 
+    subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=6))+2*(A>6)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
 
     # Polygonize the reclassified raster
     geojson_out = "%s/%s.json" % (target_path, filename)
@@ -302,7 +304,11 @@ dam_count = 8
 
 scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
 input_dir = f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}'
-output_dir = f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results/{iter_num}'
+output_dir = f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results_1/{iter_num}'
+
+if not os.path.exists(os.path.join(cwd, output_dir)):
+    os.mkdir(os.path.join(cwd, output_dir))
+
 API_Key = 'fbcac1c2cc26d853b42c4674adf905e742d1cb2b' # Census api key
 
 # Find the list of dams in the input folder
