@@ -10,6 +10,7 @@ import pygeos
 import subprocess
 import json
 import sys
+import math
 
 
 def resample_raster(rasterfile_path, filename, target_path, rescale_factor):
@@ -49,9 +50,9 @@ def polygonize_fim(rasterfile_path):
     '''
     reclass_file = target_path + "/" + filename + "_reclass.tiff"
     outfile = "--outfile="+reclass_file
-    # subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
+    subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
     # Reclassify 
-    subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=6))+2*(A>6)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
+    # subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=6))+2*(A>6)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
 
     # Polygonize the reclassified raster
     geojson_out = "%s/%s.json" % (target_path, filename)
@@ -191,6 +192,36 @@ def call_census_table(state_list, table_name, key):
     return result_df[['GEOID_T', table_name]]
 
 
+def gaussian(dij, d0):  # Gaussian probability distribution
+    if d0 >= dij:
+        val = (math.exp(-1 / 2 * ((dij / d0) ** 2)) - math.exp(-1 / 2)) / (1 - math.exp(-1 / 2))
+        return val
+    else:
+        return 0
+
+def gaussian_weights(gdf, d0):
+    d_neighbors = {}
+    d_weights = {}
+    
+    for i in range(gdf.shape[0]):
+        l_neighbors = []
+        l_weights = []
+        
+        for j in range(gdf.shape[0]):
+            if i != j:
+                temp_dist = gdf.at[i, 'geometry'].centroid.distance(gdf.at[j, 'geometry'].centroid)
+                
+                if temp_dist <= d0:
+            
+                    l_neighbors.append(j)
+                    l_weights.append(gaussian(temp_dist, d0))
+                    
+        d_neighbors[i] = l_neighbors
+        d_weights[i] = l_weights
+            
+    return d_neighbors, d_weights
+
+
 def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams_gdf):
 
     input_cols = list(census_dic.keys())
@@ -206,9 +237,27 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         fim_geoid_local_var = fim_geoid_local.loc[~fim_geoid_local[census_name].isna(), ['Dam_ID', 'GEOID', 'Class', census_name, 'geometry']].reset_index(drop=True)
 
         # TODO: investigate proportional bandwidth or Kenel window for distance decay
-        # Calculate Bivaraite Moran's I & Local Moran's I
-        w = libpysal.weights.Queen.from_dataframe(fim_geoid_local_var)  # Adjacency matrix (Queen case)
-        bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)
+        # Calculate Bivaraite Moran's I & Local Moran's I for various distance
+        max_dist = int(fim_geoid_local_var.geometry.unary_union.convex_hull.length / (2 * 3.14))
+        dist_digit = len(str(max_dist))
+        # start_dist = int('1'.ljust(dist_digit-1, '0'))
+        start_dist = int(str(max_dist)[0].ljust(dist_digit-1, '0'))
+        interval = int((max_dist - start_dist) / 10)
+
+        dist_dic = {}
+        for dist in range(start_dist, max_dist, interval):
+            neighbors, weights = gaussian_weights(fim_geoid_local_var, dist)
+            w = libpysal.weights.W(neighbors, weights, silence_warnings=True)
+            bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)
+            dist_dic[dist] = bv_mi.z_sim
+
+        # Calculate Bivaraite Moran's I & Local Moran's I for the distance that provides the highest Z-score
+        print(f"Highest Z-Score at {max(dist_dic, key=dist_dic.get)} meters")
+        optimal_dist = max(dist_dic, key=dist_dic.get)
+        
+        neighbors, weights = gaussian_weights(fim_geoid_local_var, optimal_dist)
+        w = libpysal.weights.W(neighbors, weights, silence_warnings=True)
+        bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)          
         bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
 
         # Enter results of Bivariate LISA into each census region
@@ -223,10 +272,12 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         fim_geoid_local_na[f'LISA_{new_col_name}'] = 'NA'
         fim_geoid_local_var = pd.concat([fim_geoid_local_var, fim_geoid_local_na]).reset_index(drop=True)       
         fim_geoid_local = fim_geoid_local.merge(fim_geoid_local_var[['GEOID', f'LISA_{new_col_name}']], on='GEOID')
+        fim_geoid_local[f'dist_{new_col_name}'] = optimal_dist
 
         # Enter Bivariate Moran's I result into each dam
         dam_local[f'MI_{new_col_name}'] = bv_mi.I
         dam_local[f'pval_{new_col_name}'] = bv_mi.p_z_sim
+        dam_local[f'dist_{new_col_name}'] = optimal_dist
 
     return dam_local, fim_geoid_local
 
