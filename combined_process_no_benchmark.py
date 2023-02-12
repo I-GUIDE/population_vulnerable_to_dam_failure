@@ -239,6 +239,24 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         # TODO: investigate proportional bandwidth or Kenel window for distance decay
         # Calculate Bivaraite Moran's I & Local Moran's I for various distance
         max_dist = int(fim_geoid_local_var.geometry.unary_union.convex_hull.length / (2 * 3.14))
+        points = fim_geoid_local_var.apply(lambda x:x['geometry'].centroid.coords[0], axis=1).to_list()
+
+        dist_dic = {}
+        for dist in [1000, 5000, 10000, 25000, 50000]:  # Various threshold distance in meters
+            if dist <= max_dist:
+                w = libpysal.weights.DistanceBand(points, binary=False, threshold=dist, silence_warnings=True)
+                bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)
+                dist_dic[dist] = bv_mi.z_sim
+
+        print(f"Highest Z-Score at {max(dist_dic, key=dist_dic.get)} meters")
+        optimal_dist = max(dist_dic, key=dist_dic.get)
+
+        w = libpysal.weights.DistanceBand(points, binary=False, threshold=optimal_dist, silence_warnings=True)
+        bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)          
+        bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
+
+        '''
+        max_dist = int(fim_geoid_local_var.geometry.unary_union.convex_hull.length / (2 * 3.14))
         dist_digit = len(str(max_dist))
         # start_dist = int('1'.ljust(dist_digit-1, '0'))
         start_dist = int(str(max_dist)[0].ljust(dist_digit-1, '0'))
@@ -259,6 +277,7 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         w = libpysal.weights.W(neighbors, weights, silence_warnings=True)
         bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)          
         bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
+        '''
 
         # Enter results of Bivariate LISA into each census region
         lm_dict = {1: 'HH', 2: 'LH', 3: 'LL', 4: 'HL'}
@@ -355,7 +374,7 @@ dam_count = 8
 
 scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
 input_dir = f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}'
-output_dir = f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results_1/{iter_num}'
+output_dir = f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results_2/{iter_num}'
 
 if not os.path.exists(os.path.join(cwd, output_dir)):
     os.mkdir(os.path.join(cwd, output_dir))
