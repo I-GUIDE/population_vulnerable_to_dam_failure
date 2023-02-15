@@ -16,4 +16,5 @@ module purge
 module load gcc
 module load openmpi
 
-singularity exec --bind /anvil/scratch/x-cybergis/compute/1672794633Ilt8J:/job/executable /home/x-cybergis/simages/extractinundationcensustracts-processor.sif python3 combined_process_no_benchmark.py 0
+set var=$1
+singularity exec --bind /anvil/scratch/x-cybergis/compute/1672794633Ilt8J:/job/executable /home/x-cybergis/simages/extractinundationcensustracts-processor.sif python3 combined_process_no_benchmark.py $var
