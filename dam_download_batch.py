@@ -91,32 +91,46 @@ class DamFIMInput():
         return True
 
 
-def DamFIMInput_unpacker(dam_id, scenarios, target_path):
-
-    print("Downloading %s" % dam_id)
-
-    return DamFIMInput(dam_id, scenarios, target_path).get()
-
-
-scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
-output_path = f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}'
-cwd = os.getcwd()
-
-# Find the list of dams that have MH breach scenarios
-# fed_dams = requests.get('https://fim.sec.usace.army.mil/ci/fim/getAllEAPStructure').json()
-# fd_df = pd.DataFrame(fed_dams)
-fd_df = pd.read_csv('./nid_available_scenario.csv')
-fd_df = fd_df[fd_df[f"{scenarios['loadCondition']} Breach"] == True]
-dois = fd_df['ID'].to_list()
-print(f"Number of dams to download: {len(dois)}")
-# print(os.path.join(cwd, output_path))
+def DamFIMInput_unpacker(args):
+    if not os.path.exists(os.path.join(args[2], f"{args[1]['loadCondition']}_{args[1]['breachCondition']}_{args[0]}.tiff")):
+        print("Downloading %s" % args[0])
+        return DamFIMInput(dam_id=args[0], scenarios=f"{args[1]['loadCondition']} Breach", target_path=args[2]).get()
+    else:
+        return False
 
 
-for doi in dois:
-    if os.path.exists(os.path.join(cwd, output_path, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_{doi}.tiff")):
-        # print("Skipping %s" % doi)
-        continue
-        
-    print("Downloading %s" % doi)
-    DamFIMInput(dam_id=doi,scenarios=f"{scenarios['loadCondition']} Breach",target_path=os.path.join(cwd, output_path)).get()
+if __name__ == "__main__":
+    PROCESSORS = 24
+    scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
+    output_path = os.path.join('/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams', f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}')
+    
+    if not os.path.exists(output_path):
+        os.mkdir(output_path)
+        print(f'{output_path} is created.')
 
+    # Find the list of dams that have MH breach scenarios
+    # fed_dams = requests.get('https://fim.sec.usace.army.mil/ci/fim/getAllEAPStructure').json()
+    # fd_df = pd.DataFrame(fed_dams)
+    fd_df = pd.read_csv('./nid_available_scenario.csv')
+    fd_df = fd_df[fd_df[f"{scenarios['loadCondition']}_{scenarios['breachCondition']}"] == True]
+    dois = fd_df['ID'].to_list()
+    print(f"Number of dams to download: {len(dois)}")
+
+    pool = mp.Pool(PROCESSORS)
+    print("output_path", output_path)
+    results = pool.map(DamFIMInput_unpacker,
+                        zip(dois,
+                            itertools.repeat(scenarios),
+                            itertools.repeat(output_path)
+                            )
+    )
+
+    '''
+    for doi in dois:
+        if os.path.exists(os.path.join(output_path, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_{doi}.tiff")):
+            # print("Skipping %s" % doi)
+            continue
+            
+        print("Downloading %s" % doi)
+        DamFIMInput(dam_id=doi,scenarios=f"{scenarios['loadCondition']} Breach",target_path=os.path.join(cwd, output_path)).get()
+    '''

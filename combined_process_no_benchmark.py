@@ -79,7 +79,7 @@ def polygonize_fim(rasterfile_path):
 
 def fim_and_ellipse(dam_id, scene, input_dir):
         
-    fim_path = f"./{input_dir}/{scenarios['loadCondition']}_{scenarios['breachCondition']}_{dam_id}.tiff"
+    fim_path = f"{input_dir}/NID_FIM_{scenarios['loadCondition']}_{scenarios['breachCondition']}/{scenarios['loadCondition']}_{scenarios['breachCondition']}_{dam_id}.tiff"
     
     fim_gdf = polygonize_fim(fim_path)
     fim_gdf['Dam_ID'] = dam_id
@@ -113,11 +113,11 @@ def extract_fim_geoid(dam_id, scene, input_dir, tract_gdf):
     print(f'-- {dam_id} impacts {len(fim_state)} States, {fim_state}')
 
     if len(fim_state) == 1: # If only one state is associated with the inundation mapping
-        census_gdf = gpd.read_file(f'./census_geometry/tl_2020_{fim_state[0]}_tabblock20.geojson')
+        census_gdf = gpd.read_file(f'{input_dir}/census_geometry/tl_2020_{fim_state[0]}_tabblock20.geojson')
     elif len(fim_state) >= 2: # If multiple states are associated with the inundation mapping
         census_gdf = pd.DataFrame()
         for state_num in fim_state:
-            temp_gdf = gpd.read_file(f'./census_geometry/tl_2020_{state_num}_tabblock20.geojson')
+            temp_gdf = gpd.read_file(f'{input_dir}/census_geometry/tl_2020_{state_num}_tabblock20.geojson')
             census_gdf = pd.concat([temp_gdf, census_gdf]).reset_index(drop=True)
             census_gdf = gpd.GeoDataFrame(census_gdf, geometry=census_gdf['geometry'], crs="EPSG:4326")
     else:
@@ -192,36 +192,6 @@ def call_census_table(state_list, table_name, key):
     return result_df[['GEOID_T', table_name]]
 
 
-def gaussian(dij, d0):  # Gaussian probability distribution
-    if d0 >= dij:
-        val = (math.exp(-1 / 2 * ((dij / d0) ** 2)) - math.exp(-1 / 2)) / (1 - math.exp(-1 / 2))
-        return val
-    else:
-        return 0
-
-def gaussian_weights(gdf, d0):
-    d_neighbors = {}
-    d_weights = {}
-    
-    for i in range(gdf.shape[0]):
-        l_neighbors = []
-        l_weights = []
-        
-        for j in range(gdf.shape[0]):
-            if i != j:
-                temp_dist = gdf.at[i, 'geometry'].centroid.distance(gdf.at[j, 'geometry'].centroid)
-                
-                if temp_dist <= d0:
-            
-                    l_neighbors.append(j)
-                    l_weights.append(gaussian(temp_dist, d0))
-                    
-        d_neighbors[i] = l_neighbors
-        d_weights[i] = l_weights
-            
-    return d_neighbors, d_weights
-
-
 def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams_gdf):
 
     input_cols = list(census_dic.keys())
@@ -254,30 +224,6 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         w = libpysal.weights.DistanceBand(points, binary=False, threshold=optimal_dist, silence_warnings=True)
         bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)          
         bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
-
-        '''
-        max_dist = int(fim_geoid_local_var.geometry.unary_union.convex_hull.length / (2 * 3.14))
-        dist_digit = len(str(max_dist))
-        # start_dist = int('1'.ljust(dist_digit-1, '0'))
-        start_dist = int(str(max_dist)[0].ljust(dist_digit-1, '0'))
-        interval = int((max_dist - start_dist) / 10)
-
-        dist_dic = {}
-        for dist in range(start_dist, max_dist, interval):
-            neighbors, weights = gaussian_weights(fim_geoid_local_var, dist)
-            w = libpysal.weights.W(neighbors, weights, silence_warnings=True)
-            bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)
-            dist_dic[dist] = bv_mi.z_sim
-
-        # Calculate Bivaraite Moran's I & Local Moran's I for the distance that provides the highest Z-score
-        print(f"Highest Z-Score at {max(dist_dic, key=dist_dic.get)} meters")
-        optimal_dist = max(dist_dic, key=dist_dic.get)
-        
-        neighbors, weights = gaussian_weights(fim_geoid_local_var, optimal_dist)
-        w = libpysal.weights.W(neighbors, weights, silence_warnings=True)
-        bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)          
-        bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
-        '''
 
         # Enter results of Bivariate LISA into each census region
         lm_dict = {1: 'HH', 2: 'LH', 3: 'LL', 4: 'HL'}
@@ -365,65 +311,65 @@ def population_vulnerable_to_fim_unpacker(args):
 
 ##### ------------ Main Code Starts Here ------------ #####
 
-PROCESSORS = 4
-cwd = os.getcwd()
+if __name__ == "__main__":
+    PROCESSORS = 8
+    dam_count = PROCESSORS * 2
+    # How many dams will be run for each sbatch submission
+    iter_num = int(sys.argv[1])
+    scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
+    data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
+    fim_dir = os.path.join(data_dir, f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}')
+    output_dir = os.path.join(data_dir, f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results', f'{iter_num}')
+    print('Output Directory: ', output_dir)
 
-# How many dams will be run for each sbatch submission
-iter_num = int(sys.argv[1])
-dam_count = 8
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
 
-scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
-input_dir = f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}'
-output_dir = f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results_2/{iter_num}'
+    API_Key = 'fbcac1c2cc26d853b42c4674adf905e742d1cb2b' # Census api key
 
-if not os.path.exists(os.path.join(cwd, output_dir)):
-    os.mkdir(os.path.join(cwd, output_dir))
+    # Find the list of dams in the input folder
+    fed_dams = pd.read_csv('./nid_available_scenario.csv')
+    fed_dams = fed_dams.loc[fed_dams[f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_size'] > 0]
+    fed_dams = fed_dams.sort_values(f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_size", ignore_index=True)
+    fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
+    dois = fed_dams['ID'].to_list()
+    dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
+    print(dois)
 
-API_Key = 'fbcac1c2cc26d853b42c4674adf905e742d1cb2b' # Census api key
+    # Census tract to find state associated with fim of each dam
+    tract = gpd.read_file(os.path.join(data_dir, 'census_geometry', 'census_tract_from_api.geojson'))
 
-# Find the list of dams in the input folder
-fed_dams = pd.read_csv('./nid_available_scenario.csv')
-fed_dams = fed_dams.loc[fed_dams[f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_size'] > 0]
-fed_dams = fed_dams.sort_values(f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_size", ignore_index=True)
-fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
-dois = fed_dams['ID'].to_list()
-dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
-print(dois)
-
-# Census tract to find state associated with fim of each dam
-tract = gpd.read_file(os.path.join(cwd, 'census_geometry', 'census_tract_from_api.geojson'))
-
-# List of census data to be retrieved. The key is the census data abbreviation used in the final table.
-# str: single variable
-# list: [[To be summed and set as numerator], demonimator]  
-census_info = {
-                "EP_POV150" : [['S1701_C01_040E'], 'S1701_C01_001E'],
-                "EP_UNEMP"  : 'DP03_0009PE',
-                "EP_HBURD"  : [['S2503_C01_028E', 'S2503_C01_032E', 'S2503_C01_036E', 'S2503_C01_040E'], 
-                            'S2503_C01_001E'],
-                "EP_NOHSDP" : 'S0601_C01_033E',
-                "EP_UNINSUR" : 'S2701_C05_001E',
-                "EP_AGE65" : 'S0101_C02_030E',
-                "EP_AGE17" : [['B09001_001E'], 
-                            'S0601_C01_001E'],
-                "EP_DISABL" : 'DP02_0072PE',
-                "EP_SNGPNT" : [['B11012_010E', 'B11012_015E'], 'DP02_0001E'],
-                "EP_LIMENG" : [['B16005_007E', 'B16005_008E', 'B16005_012E', 'B16005_013E', 'B16005_017E', 'B16005_018E', 
-                                'B16005_022E', 'B16005_023E', 'B16005_029E', 'B16005_030E', 'B16005_034E', 'B16005_035E',
-                                'B16005_039E', 'B16005_040E', 'B16005_044E', 'B16005_045E'], 
-                            'B16005_001E'],
-                "EP_MINRTY" : [['DP05_0071E', 'DP05_0078E', 'DP05_0079E', 'DP05_0080E', 
-                                'DP05_0081E', 'DP05_0082E', 'DP05_0083E'],
-                            'S0601_C01_001E'],
-                "EP_MUNIT" : [['DP04_0012E', 'DP04_0013E'], 
-                            'DP04_0001E'],
-                "EP_MOBILE" : 'DP04_0014PE',
-                "EP_CROWD" : [['DP04_0078E', 'DP04_0079E'], 
-                            'DP04_0002E'],
-                "EP_NOVEH" : 'DP04_0058PE',
-                "EP_GROUPQ": [['B26001_001E'], 
-                            'S0601_C01_001E'],
-}
+    # List of census data to be retrieved. The key is the census data abbreviation used in the final table.
+    # str: single variable
+    # list: [[To be summed and set as numerator], demonimator]  
+    census_info = {
+                    "EP_POV150" : [['S1701_C01_040E'], 'S1701_C01_001E'],
+                    "EP_UNEMP"  : 'DP03_0009PE',
+                    "EP_HBURD"  : [['S2503_C01_028E', 'S2503_C01_032E', 'S2503_C01_036E', 'S2503_C01_040E'], 
+                                'S2503_C01_001E'],
+                    "EP_NOHSDP" : 'S0601_C01_033E',
+                    "EP_UNINSUR" : 'S2701_C05_001E',
+                    "EP_AGE65" : 'S0101_C02_030E',
+                    "EP_AGE17" : [['B09001_001E'], 
+                                'S0601_C01_001E'],
+                    "EP_DISABL" : 'DP02_0072PE',
+                    "EP_SNGPNT" : [['B11012_010E', 'B11012_015E'], 'DP02_0001E'],
+                    "EP_LIMENG" : [['B16005_007E', 'B16005_008E', 'B16005_012E', 'B16005_013E', 'B16005_017E', 'B16005_018E', 
+                                    'B16005_022E', 'B16005_023E', 'B16005_029E', 'B16005_030E', 'B16005_034E', 'B16005_035E',
+                                    'B16005_039E', 'B16005_040E', 'B16005_044E', 'B16005_045E'], 
+                                'B16005_001E'],
+                    "EP_MINRTY" : [['DP05_0071E', 'DP05_0078E', 'DP05_0079E', 'DP05_0080E', 
+                                    'DP05_0081E', 'DP05_0082E', 'DP05_0083E'],
+                                'S0601_C01_001E'],
+                    "EP_MUNIT" : [['DP04_0012E', 'DP04_0013E'], 
+                                'DP04_0001E'],
+                    "EP_MOBILE" : 'DP04_0014PE',
+                    "EP_CROWD" : [['DP04_0078E', 'DP04_0079E'], 
+                                'DP04_0002E'],
+                    "EP_NOVEH" : 'DP04_0058PE',
+                    "EP_GROUPQ": [['B26001_001E'], 
+                                'S0601_C01_001E'],
+    }
 
 
 if __name__ == "__main__":
@@ -442,9 +388,9 @@ if __name__ == "__main__":
     lm_gdf: Bivariate LISA result
     '''
     results = pool.map(population_vulnerable_to_fim_unpacker,
-                            zip(dois, # List of Dam_ID
+                            zip(dois, # List of Dam_ID                                
                                 itertools.repeat(scenarios), # Dam failure scenario
-                                itertools.repeat(input_dir), # Input directory of NID inundation mapping
+                                itertools.repeat(data_dir), # Input directory of NID inundation mapping
                                 itertools.repeat(fed_dams), # GeoDataFrame of all dams
                                 itertools.repeat(tract), # GeoDataFrame of census tracts
                                 itertools.repeat(census_info), # Dictionary of census data to be retrieved
@@ -467,8 +413,8 @@ if __name__ == "__main__":
     print(lm_result.columns.tolist())
     lm_result = lm_result.to_crs(epsg=4326)
 
-    fim_output.to_file(os.path.join(cwd, output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_fim.geojson"), driver='GeoJSON')
-    mi_result.to_file(os.path.join(cwd, output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_mi.geojson"), driver='GeoJSON')
-    lm_result.to_file(os.path.join(cwd, output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_lm.geojson"), driver='GeoJSON')
+    fim_output.to_file(os.path.join(output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_fim.geojson"), driver='GeoJSON')
+    mi_result.to_file(os.path.join(output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_mi.geojson"), driver='GeoJSON')
+    lm_result.to_file(os.path.join(output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_lm.geojson"), driver='GeoJSON')
 
     print('Done')

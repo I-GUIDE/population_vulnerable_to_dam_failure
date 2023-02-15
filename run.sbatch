@@ -1,16 +1,19 @@
 #!/bin/tcsh
 #SBATCH --job-name=dam
+#SBATCH --partition=shared
+#SBATCH --nodes=1
+
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --time=12:00:00
-#SBATCH --mem-per-cpu=16GB
+#SBATCH --cpus-per-task=8
+#SBATCH --time=24:00:00
+#SBATCH --mem-per-cpu=12000MB
+#SBATCH --mail-type=BEGIN
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-type=END
 #SBATCH --mail-user=jparkgeo@illinois.edu
 
 module purge
-cd /data/cigi/common/jparkgeo/population_vulnerable_to_dam_failure
-source /data/keeling/a/jparkgeo/.bashrc
+module load gcc
+module load openmpi
 
-set var=$1
-conda run -n aging_dam python combined_process_no_benchmark.py $var
+singularity exec --bind /anvil/scratch/x-cybergis/compute/1672794633Ilt8J:/job/executable /home/x-cybergis/simages/extractinundationcensustracts-processor.sif python3 combined_process_no_benchmark.py 0
