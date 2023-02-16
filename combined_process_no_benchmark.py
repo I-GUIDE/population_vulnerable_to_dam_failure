@@ -336,8 +336,6 @@ if __name__ == "__main__":
     dois = fed_dams['ID'].to_list()
     print(len(dois))
     dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
-    print(len(dois))
-    print(len(dois)/PROCESSORS)
 
 
     # Census tract to find state associated with fim of each dam

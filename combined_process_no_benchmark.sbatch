@@ -1,12 +1,9 @@
 #!/bin/tcsh
 #SBATCH --job-name=dam
-#SBATCH --partition=shared
+#SBATCH --partition=wholenode
 #SBATCH --nodes=1
 
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
 #SBATCH --time=12:00:00
-#SBATCH --mem-per-cpu=24000MB
 #SBATCH --mail-type=BEGIN
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-type=END
