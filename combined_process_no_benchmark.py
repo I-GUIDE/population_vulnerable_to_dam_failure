@@ -311,7 +311,7 @@ def population_vulnerable_to_fim_unpacker(args):
 ##### ------------ Main Code Starts Here ------------ #####
 
 if __name__ == "__main__":
-    PROCESSORS = 8
+    PROCESSORS = 24
     dam_count = PROCESSORS 
     # How many dams will be run for each sbatch submission
     print(sys.argv[1])
@@ -336,7 +336,6 @@ if __name__ == "__main__":
     dois = fed_dams['ID'].to_list()
     print(len(dois))
     dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
-
 
     # Census tract to find state associated with fim of each dam
     tract = gpd.read_file(os.path.join(data_dir, 'census_geometry', 'census_tract_from_api.geojson'))
