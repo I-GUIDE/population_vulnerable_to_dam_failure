@@ -211,7 +211,7 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         points = fim_geoid_local_var.apply(lambda x:x['geometry'].centroid.coords[0], axis=1).to_list()
 
         dist_dic = {}
-        for dist in [1000, 5000, 10000, 25000, 50000]:  # Various threshold distance in meters
+        for dist in [500, 1000, 2500, 5000, 7500, 10000, 25000, 50000]:  # Various threshold distance in meters
             if dist <= max_dist:
                 w = libpysal.weights.DistanceBand(points, binary=False, threshold=dist, silence_warnings=True)
                 bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)
@@ -314,6 +314,8 @@ if __name__ == "__main__":
     PROCESSORS = 8
     dam_count = PROCESSORS 
     # How many dams will be run for each sbatch submission
+    print(sys.argv[1])
+    print(type(sys.argv[1]))
     iter_num = int(sys.argv[1])
     scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
     data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
@@ -332,9 +334,10 @@ if __name__ == "__main__":
     fed_dams = fed_dams.sort_values(f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_size", ignore_index=True)
     fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
     dois = fed_dams['ID'].to_list()
-    dois = dois[400:]
-    dois = dois[iter_num*dam_count:(iter_num+1)*dam_count+1]
-    print(dois)
+    print(len(dois))
+    dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
+    print(len(dois))
+    print(len(dois)/PROCESSORS)
 
 
     # Census tract to find state associated with fim of each dam
