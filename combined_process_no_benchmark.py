@@ -105,7 +105,7 @@ def state_num_related_to_fim(fim_gdf, tract_gdf):
     
 
 def extract_fim_geoid(dam_id, scene, input_dir, tract_gdf):
-    print(f'{dam_id}: Step 1, 1/4, Identifying associated regions (Ellipse)')
+    print(f'{dam_id}: Step 1, 1/4, Identifying associated regions')
     fim_gdf = fim_and_ellipse(dam_id, scene, input_dir)
 
     print(f'{dam_id}: Step 1, 2/4, Search states associated')
@@ -206,7 +206,6 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         # Local fim_geoid
         fim_geoid_local_var = fim_geoid_local.loc[~fim_geoid_local[census_name].isna(), ['Dam_ID', 'GEOID', 'Class', census_name, 'geometry']].reset_index(drop=True)
 
-        # TODO: investigate proportional bandwidth or Kenel window for distance decay
         # Calculate Bivaraite Moran's I & Local Moran's I for various distance
         max_dist = int(fim_geoid_local_var.geometry.unary_union.convex_hull.length / (2 * 3.14))
         points = fim_geoid_local_var.apply(lambda x:x['geometry'].centroid.coords[0], axis=1).to_list()
@@ -313,13 +312,13 @@ def population_vulnerable_to_fim_unpacker(args):
 
 if __name__ == "__main__":
     PROCESSORS = 8
-    dam_count = PROCESSORS * 2
+    dam_count = PROCESSORS 
     # How many dams will be run for each sbatch submission
     iter_num = int(sys.argv[1])
     scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
     data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
     fim_dir = os.path.join(data_dir, f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}')
-    output_dir = os.path.join(data_dir, f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results', f'{iter_num}')
+    output_dir = os.path.join(data_dir, f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results', f'N_{iter_num}')
     print('Output Directory: ', output_dir)
 
     if not os.path.exists(output_dir):
@@ -333,8 +332,10 @@ if __name__ == "__main__":
     fed_dams = fed_dams.sort_values(f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_size", ignore_index=True)
     fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
     dois = fed_dams['ID'].to_list()
-    dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
+    dois = dois[400:]
+    dois = dois[iter_num*dam_count:(iter_num+1)*dam_count+1]
     print(dois)
+
 
     # Census tract to find state associated with fim of each dam
     tract = gpd.read_file(os.path.join(data_dir, 'census_geometry', 'census_tract_from_api.geojson'))
@@ -371,8 +372,6 @@ if __name__ == "__main__":
                                 'S0601_C01_001E'],
     }
 
-
-if __name__ == "__main__":
 
     # Empty GeoDataFrame for storing the results
     fim_output = pd.DataFrame() # GEOID of inundated and non-inundated regions 
