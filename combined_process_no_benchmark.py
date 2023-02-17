@@ -334,8 +334,8 @@ if __name__ == "__main__":
     fed_dams = fed_dams.sort_values(f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_size", ignore_index=True)
     fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
     dois = fed_dams['ID'].to_list()
-    print(len(dois))
     dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
+    print(dois)
 
     # Census tract to find state associated with fim of each dam
     tract = gpd.read_file(os.path.join(data_dir, 'census_geometry', 'census_tract_from_api.geojson'))
