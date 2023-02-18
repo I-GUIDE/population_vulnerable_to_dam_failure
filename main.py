@@ -10,7 +10,6 @@ import pygeos
 import subprocess
 import json
 import sys
-import math
 
 
 def resample_raster(rasterfile_path, filename, target_path, rescale_factor):
@@ -51,9 +50,7 @@ def polygonize_fim(rasterfile_path):
     reclass_file = target_path + "/" + filename + "_reclass.tiff"
     outfile = "--outfile="+reclass_file
     subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
-    # Reclassify 
-    # subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=6))+2*(A>6)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
-
+    
     # Polygonize the reclassified raster
     geojson_out = "%s/%s.json" % (target_path, filename)
     subprocess.run(["gdal_polygonize.py", reclass_file, "-b", "1", geojson_out, filename, "value"])
@@ -79,7 +76,7 @@ def polygonize_fim(rasterfile_path):
 
 def fim_and_ellipse(dam_id, scene, input_dir):
         
-    fim_path = f"{input_dir}/NID_FIM_{scenarios['loadCondition']}_{scenarios['breachCondition']}/{scenarios['loadCondition']}_{scenarios['breachCondition']}_{dam_id}.tiff"
+    fim_path = f"{input_dir}/NID_FIM_{scene['loadCondition']}_{scene['breachCondition']}/{scene['loadCondition']}_{scene['breachCondition']}_{dam_id}.tiff"
     
     fim_gdf = polygonize_fim(fim_path)
     fim_gdf['Dam_ID'] = dam_id
@@ -205,8 +202,8 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         
         # Local fim_geoid
         fim_geoid_local_var = fim_geoid_local.loc[~fim_geoid_local[census_name].isna(), ['Dam_ID', 'GEOID', 'Class', census_name, 'geometry']].reset_index(drop=True)
-
-        # Calculate Bivaraite Moran's I & Local Moran's I for various distance
+        
+        # Calculate Bivaraite Moran's I & Local Moran's I for various distance (Fixed Distanceband)
         max_dist = int(fim_geoid_local_var.geometry.unary_union.convex_hull.length / (2 * 3.14))
         points = fim_geoid_local_var.apply(lambda x:x['geometry'].centroid.coords[0], axis=1).to_list()
 
@@ -219,10 +216,19 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
 
         print(f"Highest Z-Score at {max(dist_dic, key=dist_dic.get)} meters")
         optimal_dist = max(dist_dic, key=dist_dic.get)
-
+        
         w = libpysal.weights.DistanceBand(points, binary=False, threshold=optimal_dist, silence_warnings=True)
         bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)          
         bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
+        
+        '''
+        # Calculate Bivaraite Moran's I & Local Moran's I using Kernel Density (k=3)
+        points = fim_geoid_local_var.apply(lambda x:x['geometry'].centroid.coords[0], axis=1).to_list()
+
+        kw = libpysal.weights.distance.Kernel(points, bandwidth=None, fixed=True, k=3)
+        bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], kw)          
+        bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], kw, seed=17)
+        '''
 
         # Enter results of Bivariate LISA into each census region
         lm_dict = {1: 'HH', 2: 'LH', 3: 'LL', 4: 'HL'}
@@ -311,37 +317,39 @@ def population_vulnerable_to_fim_unpacker(args):
 ##### ------------ Main Code Starts Here ------------ #####
 
 if __name__ == "__main__":
-    PROCESSORS = 4
+    PROCESSORS = 24
     dam_count = PROCESSORS 
 
     # How many dams will be run for each sbatch submission
-    print(sys.argv[1])
-    print(type(sys.argv[1]))
+    print(f"Iter: {sys.argv[1]}, Dam count: {dam_count}")
     iter_num = int(sys.argv[1])
-
-    # Find the list of dams in the input folder
     scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
-    fed_dams = pd.read_csv('./nid_available_scenario.csv')
-    fed_dams = fed_dams.loc[fed_dams[f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_size'] > 0]
-    fed_dams = fed_dams.sort_values(f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_size", ignore_index=True)
-    fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
-    fed_dams = fed_dams.loc[fed_dams['ID'].isin(['PA00104', 'AR00151S001', 'KS82201', 'TX00019', 'OK10317', 'IA00013', 'SD01093', 'AR00151', 
-                                                 'MT00025', 'ID00288', 'TX00018', 'MO30202', 'SD01094', 'MS82201S001', 'MS82201', 'CA10023', 
-                                                 'MO82202', 'CA10111', 'CA10107', 'AZ10002S001', 'WA00298', 'CA10303', 'AR00173S002', 'TX00014'])]
-    fed_dams = fed_dams.reset_index(drop=True)
-    dois = fed_dams['ID'].to_list()
-    dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
-    print(dois)
 
+    # Local directory
+    # data_dir = os.getcwd()
+    # fim_dir = os.path.join(data_dir, f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}')
+    # output_dir = os.path.join(data_dir, f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results_Anvil', f'N_{iter_num}')
+    
+    # Anvil directory
     data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
     fim_dir = os.path.join(data_dir, f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}')
-    output_dir = os.path.join(data_dir, f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results', 'N_17' ,f'N_{iter_num}')
+    output_dir = os.path.join(data_dir, f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results', f'N_{iter_num}')
     print('Output Directory: ', output_dir)
 
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
 
     API_Key = 'fbcac1c2cc26d853b42c4674adf905e742d1cb2b' # Census api key
+
+    # Find the list of dams in the input folder
+    fed_dams = pd.read_csv('./nid_available_scenario.csv')
+    fed_dams = fed_dams.loc[fed_dams[f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_size'] > 0]
+    fed_dams = fed_dams.sort_values(f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_size", ignore_index=True)
+    fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
+    fed_dams = fed_dams.loc[fed_dams['ID'] != 'CA10104']
+    dois = fed_dams['ID'].to_list()
+    dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
+    print(dois)
 
     # Census tract to find state associated with fim of each dam
     tract = gpd.read_file(os.path.join(data_dir, 'census_geometry', 'census_tract_from_api.geojson'))
