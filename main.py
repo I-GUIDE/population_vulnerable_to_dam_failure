@@ -214,7 +214,7 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
                 bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)
                 dist_dic[dist] = bv_mi.z_sim
 
-        print(f"Highest Z-Score at {max(dist_dic, key=dist_dic.get)} meters")
+        print(f"{dam_id}, {census_name}, Highest Z-Score at {max(dist_dic, key=dist_dic.get)} meters")
         optimal_dist = max(dist_dic, key=dist_dic.get)
         
         w = libpysal.weights.DistanceBand(points, binary=False, threshold=optimal_dist, silence_warnings=True)
