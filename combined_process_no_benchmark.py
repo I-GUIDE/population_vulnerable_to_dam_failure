@@ -10,7 +10,6 @@ import pygeos
 import subprocess
 import json
 import sys
-import math
 
 
 def resample_raster(rasterfile_path, filename, target_path, rescale_factor):
@@ -51,9 +50,7 @@ def polygonize_fim(rasterfile_path):
     reclass_file = target_path + "/" + filename + "_reclass.tiff"
     outfile = "--outfile="+reclass_file
     subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
-    # Reclassify 
-    # subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=6))+2*(A>6)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
-
+    
     # Polygonize the reclassified raster
     geojson_out = "%s/%s.json" % (target_path, filename)
     subprocess.run(["gdal_polygonize.py", reclass_file, "-b", "1", geojson_out, filename, "value"])
@@ -79,7 +76,7 @@ def polygonize_fim(rasterfile_path):
 
 def fim_and_ellipse(dam_id, scene, input_dir):
         
-    fim_path = f"{input_dir}/NID_FIM_{scenarios['loadCondition']}_{scenarios['breachCondition']}/{scenarios['loadCondition']}_{scenarios['breachCondition']}_{dam_id}.tiff"
+    fim_path = f"{input_dir}/NID_FIM_{scene['loadCondition']}_{scene['breachCondition']}/{scene['loadCondition']}_{scene['breachCondition']}_{dam_id}.tiff"
     
     fim_gdf = polygonize_fim(fim_path)
     fim_gdf['Dam_ID'] = dam_id
@@ -311,16 +308,23 @@ def population_vulnerable_to_fim_unpacker(args):
 ##### ------------ Main Code Starts Here ------------ #####
 
 if __name__ == "__main__":
-    PROCESSORS = 24
-    dam_count = PROCESSORS 
+    PROCESSORS = 4
+    dam_count = PROCESSORS * 6
     # How many dams will be run for each sbatch submission
     print(sys.argv[1])
     print(type(sys.argv[1]))
     iter_num = int(sys.argv[1])
     scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
-    data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
+
+    # Local directory
+    data_dir = os.getcwd()
     fim_dir = os.path.join(data_dir, f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}')
-    output_dir = os.path.join(data_dir, f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results', f'N_{iter_num}')
+    output_dir = os.path.join(data_dir, f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results_Anvil', f'N_{iter_num}')
+    
+    # Anvil directory
+    # data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
+    # fim_dir = os.path.join(data_dir, f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}')
+    # output_dir = os.path.join(data_dir, f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results', f'N_{iter_num}')
     print('Output Directory: ', output_dir)
 
     if not os.path.exists(output_dir):
