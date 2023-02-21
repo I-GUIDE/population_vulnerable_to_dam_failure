@@ -49,7 +49,7 @@ def polygonize_fim(rasterfile_path):
             os.remove(temp_path_)
 
     # Resample raster file to 10-times smaller
-    resample_10_path = resample_raster(rasterfile_path, filename, target_path, rescale_factor=4)
+    resample_10_path = resample_raster(rasterfile_path, filename, target_path, rescale_factor=10)
 
     # Reclassify raster
     '''
@@ -57,8 +57,9 @@ def polygonize_fim(rasterfile_path):
     water_lvl_recls = [-9999, 1, 2, 3, 4]
     '''
     outfile = "--outfile="+reclass_file
-    subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
-    
+    # subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
+    subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1","--NoDataValue=-9999"],stdout=subprocess.PIPE)
+        
     # Polygonize the reclassified raster
     subprocess.run(["gdal_polygonize.py", reclass_file, "-b", "1", geojson_out, filename, "value"])
 
@@ -81,13 +82,33 @@ def polygonize_fim(rasterfile_path):
     return inund_per_cls
 
 
-def fim_and_ellipse(dam_id, scene, input_dir):
-        
-    fim_path = f"{input_dir}/NID_FIM_{scene['loadCondition']}_{scene['breachCondition']}/{scene['loadCondition']}_{scene['breachCondition']}_{dam_id}.tiff"
+def fim_and_ellipse(dam_id, input_dir):
     
-    fim_gdf = polygonize_fim(fim_path)
+    sce_mh = {'loadCondition': 'MH', 'breachCondition': 'F'}  # Maximun Height scenario
+    sce_tas = {'loadCondition': 'TAS', 'breachCondition': 'F'}  # Top of Active Storage scenario
+    sce_nh = {'loadCondition': 'NH', 'breachCondition': 'F'}  # Normal Height scenario
+
+    # Maximun Height scenario (weight: 1)
+    fim_path_mh = f"{input_dir}/NID_FIM_{sce_mh['loadCondition']}_{sce_mh['breachCondition']}/{sce_mh['loadCondition']}_{sce_mh['breachCondition']}_{dam_id}.tiff"
+    fim_gdf_mh = polygonize_fim(fim_path_mh)
+    fim_gdf_mh['value_mh'] = fim_gdf_mh['value'] * 1
+    fim_gdf_mh.drop(columns=['value'], inplace=True)
+
+    # Maximun Height scenario (weight: 2)
+    fim_path_tas = f"{input_dir}/NID_FIM_{sce_tas['loadCondition']}_{sce_tas['breachCondition']}/{sce_tas['loadCondition']}_{sce_tas['breachCondition']}_{dam_id}.tiff"
+    fim_gdf_tas = polygonize_fim(fim_path_tas)
+    fim_gdf_tas['value_tas'] = fim_gdf_tas['value'] * 2
+    fim_gdf_tas.drop(columns=['value'], inplace=True)
+
+    # Maximun Height scenario (weight: 4)
+    fim_path_nh = f"{input_dir}/NID_FIM_{sce_nh['loadCondition']}_{sce_nh['breachCondition']}/{sce_nh['loadCondition']}_{sce_nh['breachCondition']}_{dam_id}.tiff"
+    fim_gdf_nh = polygonize_fim(fim_path_nh)
+    fim_gdf_nh['value_nh'] = fim_gdf_nh['value'] * 4
+    fim_gdf_nh.drop(columns=['value'], inplace=True)
+
+
     fim_gdf['Dam_ID'] = dam_id
-    fim_gdf['Scenario'] = f"{scene['loadCondition']}_{scene['breachCondition']}"
+    fim_gdf.drop(columns=['value_mh', 'value_tas', 'value_nh'], inplace=True)
         
     return fim_gdf
 
@@ -108,9 +129,9 @@ def state_num_related_to_fim(fim_gdf, tract_gdf):
     return unique_state
     
 
-def extract_fim_geoid(dam_id, scene, input_dir, tract_gdf):
+def extract_fim_geoid(dam_id, input_dir, tract_gdf):
     print(f'{dam_id}: Step 1, 1/4, Identifying associated regions')
-    fim_gdf = fim_and_ellipse(dam_id, scene, input_dir)
+    fim_gdf = fim_and_ellipse(dam_id, input_dir)
 
     print(f'{dam_id}: Step 1, 2/4, Search states associated')
     fim_state = state_num_related_to_fim(fim_gdf, tract_gdf)
@@ -130,7 +151,6 @@ def extract_fim_geoid(dam_id, scene, input_dir, tract_gdf):
     # Destination dataframe to save the results
     print(f"{dam_id}: Step 1, 3/4, Extracting GEOID of census blocks")
     fim_geoid_df = pd.DataFrame({'Dam_ID': pd.Series(dtype='str'),
-                                'Scenario': pd.Series(dtype='str'),
                                 'GEOID': pd.Series(dtype='str'),
                                 'Class': pd.Series(dtype='str')}
                                 )    
@@ -147,7 +167,6 @@ def extract_fim_geoid(dam_id, scene, input_dir, tract_gdf):
 
         for geoid_ in fim_geoid_['GEOID'].to_list():
             new_row = pd.DataFrame({'Dam_ID': dam_id, 
-                                    'Scenario': f"{scene['loadCondition']}_{scene['breachCondition']}", 
                                     'GEOID': geoid_, 
                                     'Class': water_cls}, 
                                     index=[0]
@@ -158,7 +177,7 @@ def extract_fim_geoid(dam_id, scene, input_dir, tract_gdf):
     fim_geoid_gdf = fim_geoid_df.merge(census_gdf, on='GEOID')
     fim_geoid_gdf = gpd.GeoDataFrame(fim_geoid_gdf, geometry=fim_geoid_gdf['geometry'], crs='EPSG:4326')
     fim_geoid_gdf['Class'] = fim_geoid_gdf['Class'].astype(int)
-    fim_geoid_gdf = fim_geoid_gdf.groupby(['Dam_ID', 'Scenario', 'GEOID'], 
+    fim_geoid_gdf = fim_geoid_gdf.groupby(['Dam_ID', 'GEOID'], 
                                     group_keys=False).apply(lambda x:x.loc[x['Class'].idxmax()]
                                                             ).reset_index(drop=True)
     fim_geoid_gdf = fim_geoid_gdf.set_crs(epsg=4326)
@@ -307,9 +326,9 @@ def spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, API_Key):
     return mi_gdf, lm_gdf
 
 
-def population_vulnerable_to_fim(dam_id, scene, input_dir, fd_gdf, tract_gdf, census_dic, API_Key):
+def population_vulnerable_to_fim(dam_id, input_dir, fd_gdf, tract_gdf, census_dic, API_Key):
     # Step 1: Compute GEOID of inundated and non-inundated regions from NID inundation mapping of each dam
-    fim_geoid_gdf, fim_gdf = extract_fim_geoid(dam_id, scene, input_dir, tract_gdf)
+    fim_geoid_gdf, fim_gdf = extract_fim_geoid(dam_id, input_dir, tract_gdf)
 
     # Step 2: Spatial correlation between fim and census data
     mi_gdf, lm_gdf = spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, API_Key)
@@ -330,17 +349,19 @@ if __name__ == "__main__":
     # How many dams will be run for each sbatch submission
     print(f"Iter: {sys.argv[1]}, Dam count: {dam_count}")
     iter_num = int(sys.argv[1])
-    scenarios = {'loadCondition': 'TAS', 'breachCondition': 'F'}
+
+    # Multiple Scenarios
+    sce_mh = {'loadCondition': 'MH', 'breachCondition': 'F'}  # Maximun Height scenario
+    sce_tas = {'loadCondition': 'TAS', 'breachCondition': 'F'}  # Top of Active Storage scenario
+    sce_nh = {'loadCondition': 'NH', 'breachCondition': 'F'}  # Normal Height scenario
 
     # Local directory
     # data_dir = os.getcwd()
-    # fim_dir = os.path.join(data_dir, f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}')
-    # output_dir = os.path.join(data_dir, f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results_Anvil', f'N_{iter_num}')
+    # output_dir = os.path.join(data_dir, f'Multi_F_Results', f'N_{iter_num}')
     
     # Anvil directory
     data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
-    fim_dir = os.path.join(data_dir, f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}')
-    output_dir = os.path.join(data_dir, f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_Results', f'N_{iter_num}')
+    output_dir = os.path.join(data_dir, f'Multi_F_Results', f'N_{iter_num}')
     print('Output Directory: ', output_dir)
 
     if not os.path.exists(output_dir):
@@ -350,13 +371,17 @@ if __name__ == "__main__":
 
     # Find the list of dams in the input folder
     fed_dams = pd.read_csv('./nid_available_scenario.csv')
-    fed_dams = fed_dams.loc[fed_dams[f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}'] == True]
-    fed_dams = fed_dams.loc[fed_dams.apply(lambda x: True 
-                                           if os.path.exists(os.path.join(data_dir, 
-                                           f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}', 
-                                           f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_{x["ID"]}.tiff')
-                                           ) else False, axis=1)].reset_index(drop=True)
+
+    # Select only Fed Dams that have inundation maps.
+    for sce in [sce_mh, sce_tas, sce_nh]:
+        fed_dams = fed_dams.loc[fed_dams[f'{sce["loadCondition"]}_{sce["breachCondition"]}'] == True]
+        fed_dams = fed_dams.loc[fed_dams.apply(lambda x: True 
+                                            if os.path.exists(os.path.join(data_dir, 
+                                            f'NID_FIM_{sce["loadCondition"]}_{sce["breachCondition"]}', 
+                                            f'{sce["loadCondition"]}_{sce["breachCondition"]}_{x["ID"]}.tiff')
+                                            ) else False, axis=1)].reset_index(drop=True)
     fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
+    print(f'Total Dams: {fed_dams.shape[0]}')
     # fed_dams = fed_dams.loc[fed_dams['ID'] != 'CA10104']
     dois = fed_dams['ID'].to_list()
     dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
@@ -412,7 +437,6 @@ if __name__ == "__main__":
     '''
     results = pool.map(population_vulnerable_to_fim_unpacker,
                             zip(dois, # List of Dam_ID                                
-                                itertools.repeat(scenarios), # Dam failure scenario
                                 itertools.repeat(data_dir), # Input directory of NID inundation mapping
                                 itertools.repeat(fed_dams), # GeoDataFrame of all dams
                                 itertools.repeat(tract), # GeoDataFrame of census tracts
@@ -436,8 +460,8 @@ if __name__ == "__main__":
     print(lm_result.columns.tolist())
     lm_result = lm_result.to_crs(epsg=4326)
 
-    fim_output.to_file(os.path.join(output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_fim.geojson"), driver='GeoJSON')
-    mi_result.to_file(os.path.join(output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_mi.geojson"), driver='GeoJSON')
-    lm_result.to_file(os.path.join(output_dir, f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_lm.geojson"), driver='GeoJSON')
+    fim_output.to_file(os.path.join(output_dir, f"Multi_F_fim.geojson"), driver='GeoJSON')
+    mi_result.to_file(os.path.join(output_dir, f"Multi_F_mi.geojson"), driver='GeoJSON')
+    lm_result.to_file(os.path.join(output_dir, f"Multi_F_lm.geojson"), driver='GeoJSON')
 
     print('Done')
