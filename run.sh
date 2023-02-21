@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for i in {0..17} 
+for i in {0..14} 
 do
     sbatch h4_sbatch.sbatch $i
     echo $i "Regular run"

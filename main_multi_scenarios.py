@@ -30,7 +30,7 @@ def resample_raster(rasterfile_path, filename, target_path, rescale_factor):
         save_path = target_path +"/"+ filename + f"_resample.tiff"
         subprocess.run(["gdalwarp","-r","bilinear","-of","GTiff","-tr",str(xres),str(yres),rasterfile_path,save_path])
 
-        return save_path
+        return save_path, raster_meta
     
 
 def polygonize_fim(rasterfile_path):
@@ -40,16 +40,16 @@ def polygonize_fim(rasterfile_path):
     filename = rasterfile_path.split("/")[-1].split(".")[-2]
 
     # Define paths
-    resample_file = target_path +"/"+ filename + f"_resample.tiff"
+    resample_path = target_path +"/"+ filename + f"_resample.tiff"
     reclass_file = target_path + "/" + filename + "_reclass.tiff"
     geojson_out = "%s/%s.json" % (target_path, filename)
 
-    for temp_path_ in [resample_file, reclass_file, geojson_out]:
+    for temp_path_ in [resample_path, reclass_file, geojson_out]:
         if os.path.exists(temp_path_):
             os.remove(temp_path_)
 
     # Resample raster file to 10-times smaller
-    resample_10_path = resample_raster(rasterfile_path, filename, target_path, rescale_factor=10)
+    resample_path, raster_meta = resample_raster(rasterfile_path, filename, target_path, rescale_factor=4)
 
     # Reclassify raster
     '''
@@ -57,26 +57,35 @@ def polygonize_fim(rasterfile_path):
     water_lvl_recls = [-9999, 1, 2, 3, 4]
     '''
     outfile = "--outfile="+reclass_file
-    # subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
-    subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1","--NoDataValue=-9999"],stdout=subprocess.PIPE)
+    no_data_val = raster_meta['bands'][0]['noDataValue']
+    # subprocess.run(["gdal_calc.py","-A",resample_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
+    subprocess.run(["gdal_calc.py","-A",resample_path,outfile,f"--calc=-9999*(A<=0)+1*(A>0)",f"--NoDataValue={no_data_val}"],stdout=subprocess.PIPE)
         
     # Polygonize the reclassified raster
     subprocess.run(["gdal_polygonize.py", reclass_file, "-b", "1", geojson_out, filename, "value"])
 
     inund_polygons = gpd.read_file(geojson_out)
-    inund_polygons = inund_polygons.loc[(inund_polygons['value'] != -9999) & (inund_polygons['value'] != 0)]  # Remove pixels of null value
 
-    # drop invalid geometries
-    inund_polygons = inund_polygons.loc[inund_polygons['geometry'].is_valid, :]
+    if inund_polygons.shape[0] != 0:
+        inund_polygons = inund_polygons.loc[(inund_polygons['value'] != -9999) & (inund_polygons['value'] != 0)]  # Remove pixels of null value
 
-    # Coverage for each class of inundation map
-    inund_per_cls = inund_polygons.dissolve(by='value')
-    inund_per_cls.reset_index(inplace=True)
+        # drop invalid geometries
+        inund_polygons = inund_polygons.loc[inund_polygons['geometry'].is_valid, :]
 
-    # remove all temp files
-    os.remove(resample_10_path)
-    os.remove(reclass_file)
-    os.remove(geojson_out)
+        # Coverage for each class of inundation map
+        inund_per_cls = inund_polygons.dissolve(by='value')
+        inund_per_cls.reset_index(inplace=True)
+
+        # remove all temp files
+        os.remove(resample_path)
+        os.remove(reclass_file)
+        os.remove(geojson_out)
+
+        # inundation_per_cls: GeoDataFrame 
+        return inund_per_cls
+
+    else:
+        return gpd.GeoDataFrame(data={'value': 1}, index=[0], geometry=[None])
 
     # inundation_per_cls: GeoDataFrame 
     return inund_per_cls
@@ -94,21 +103,27 @@ def fim_and_ellipse(dam_id, input_dir):
     fim_gdf_mh['value_mh'] = fim_gdf_mh['value'] * 1
     fim_gdf_mh.drop(columns=['value'], inplace=True)
 
-    # Maximun Height scenario (weight: 2)
+    # Top of Active Storage scenario (weight: 2)
     fim_path_tas = f"{input_dir}/NID_FIM_{sce_tas['loadCondition']}_{sce_tas['breachCondition']}/{sce_tas['loadCondition']}_{sce_tas['breachCondition']}_{dam_id}.tiff"
     fim_gdf_tas = polygonize_fim(fim_path_tas)
     fim_gdf_tas['value_tas'] = fim_gdf_tas['value'] * 2
     fim_gdf_tas.drop(columns=['value'], inplace=True)
 
-    # Maximun Height scenario (weight: 4)
+    # Normal Height scenario (weight: 4)
     fim_path_nh = f"{input_dir}/NID_FIM_{sce_nh['loadCondition']}_{sce_nh['breachCondition']}/{sce_nh['loadCondition']}_{sce_nh['breachCondition']}_{dam_id}.tiff"
     fim_gdf_nh = polygonize_fim(fim_path_nh)
     fim_gdf_nh['value_nh'] = fim_gdf_nh['value'] * 4
     fim_gdf_nh.drop(columns=['value'], inplace=True)
 
+    # Find intersections of inundated area across multiple scenarios
+    temp_fim_gdf = gpd.overlay(fim_gdf_nh, fim_gdf_tas, how='union')
+    fim_gdf = gpd.overlay(temp_fim_gdf, fim_gdf_mh, how='union')
+    fim_gdf.fillna(0, inplace=True)
 
-    fim_gdf['Dam_ID'] = dam_id
+    # Sum values (1: MH only, 2: TAS only, 3: MH + TAS, 4: NH only, 5: MH + NH, 6: TAS + NH, 7: MH + TAS + NH)
+    fim_gdf['value'] = fim_gdf.apply(lambda x:x['value_mh'] + x['value_tas'] + x['value_nh'], axis=1)
     fim_gdf.drop(columns=['value_mh', 'value_tas', 'value_nh'], inplace=True)
+    fim_gdf['Dam_ID'] = dam_id
         
     return fim_gdf
 
@@ -372,6 +387,9 @@ if __name__ == "__main__":
     # Find the list of dams in the input folder
     fed_dams = pd.read_csv('./nid_available_scenario.csv')
 
+    # Remove dams with error (fim is too small to generate)
+    fed_dams = fed_dams.loc[fed_dams['ID'] != 'CO01283S001']
+
     # Select only Fed Dams that have inundation maps.
     for sce in [sce_mh, sce_tas, sce_nh]:
         fed_dams = fed_dams.loc[fed_dams[f'{sce["loadCondition"]}_{sce["breachCondition"]}'] == True]
@@ -382,7 +400,7 @@ if __name__ == "__main__":
                                             ) else False, axis=1)].reset_index(drop=True)
     fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
     print(f'Total Dams: {fed_dams.shape[0]}')
-    # fed_dams = fed_dams.loc[fed_dams['ID'] != 'CA10104']
+    
     dois = fed_dams['ID'].to_list()
     dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
     print(dois)
