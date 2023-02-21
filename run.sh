@@ -1,14 +1,19 @@
 #!/bin/bash
 
-for i in {0..18} 
+for i in {0..17} 
 do
-echo $i
-    if [ $i -lt 17 ] 
-    then 
-        sbatch h4_combined_process.sbatch $i
-        echo $i "Regular run"
-    else
-        sbatch h24_combined_process.sbatch $i
-        echo $i "Intense run"
-    fi
+    sbatch h4_sbatch.sbatch $i
+    echo $i "Regular run"
 done
+
+# for i in {0..16} 
+# do
+#     if [ $i -lt 17 ] 
+#     then 
+#         sbatch h4_sbatch.sbatch $i
+#         echo $i "Regular run"
+#     else
+#         sbatch h24_sbatch.sbatch $i
+#         echo $i "Intense run"
+#     fi
+# done

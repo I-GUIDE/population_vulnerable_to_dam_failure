@@ -101,7 +101,7 @@ def DamFIMInput_unpacker(args):
 
 if __name__ == "__main__":
     PROCESSORS = 24
-    scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
+    scenarios = {'loadCondition': 'TAS', 'breachCondition': 'F'}
     output_path = os.path.join('/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams', f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}')
     
     if not os.path.exists(output_path):

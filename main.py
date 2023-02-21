@@ -27,7 +27,7 @@ def resample_raster(rasterfile_path, filename, target_path, rescale_factor):
 
     if (xres != 0) and (yres != 0):
         # resample raster
-        save_path = target_path +"/"+ filename + f"_resample_{rescale_factor}.tiff"
+        save_path = target_path +"/"+ filename + f"_resample.tiff"
         subprocess.run(["gdalwarp","-r","bilinear","-of","GTiff","-tr",str(xres),str(yres),rasterfile_path,save_path])
 
         return save_path
@@ -39,6 +39,16 @@ def polygonize_fim(rasterfile_path):
     target_path = '/'.join(rasterfile_path.split('/')[:-1])
     filename = rasterfile_path.split("/")[-1].split(".")[-2]
 
+    # Define paths
+    resample_file = target_path +"/"+ filename + f"_resample.tiff"
+    reclass_file = target_path + "/" + filename + "_reclass.tiff"
+    geojson_out = "%s/%s.json" % (target_path, filename)
+
+    for temp_path_ in [resample_file, reclass_file, geojson_out]:
+        print(temp_path_)
+        if os.path.exists(temp_path_):
+            os.remove(temp_path_)
+
     # Resample raster file to 10-times smaller
     resample_10_path = resample_raster(rasterfile_path, filename, target_path, rescale_factor=4)
 
@@ -47,12 +57,10 @@ def polygonize_fim(rasterfile_path):
     water_lvl = [0, 2, 6, 15, np.inf]  # Original inundation map value (underwater in feet)
     water_lvl_recls = [-9999, 1, 2, 3, 4]
     '''
-    reclass_file = target_path + "/" + filename + "_reclass.tiff"
     outfile = "--outfile="+reclass_file
     subprocess.run(["gdal_calc.py","-A",resample_10_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
     
     # Polygonize the reclassified raster
-    geojson_out = "%s/%s.json" % (target_path, filename)
     subprocess.run(["gdal_polygonize.py", reclass_file, "-b", "1", geojson_out, filename, "value"])
 
     inund_polygons = gpd.read_file(geojson_out)
@@ -323,7 +331,7 @@ if __name__ == "__main__":
     # How many dams will be run for each sbatch submission
     print(f"Iter: {sys.argv[1]}, Dam count: {dam_count}")
     iter_num = int(sys.argv[1])
-    scenarios = {'loadCondition': 'MH', 'breachCondition': 'F'}
+    scenarios = {'loadCondition': 'TAS', 'breachCondition': 'F'}
 
     # Local directory
     # data_dir = os.getcwd()
@@ -343,10 +351,14 @@ if __name__ == "__main__":
 
     # Find the list of dams in the input folder
     fed_dams = pd.read_csv('./nid_available_scenario.csv')
-    fed_dams = fed_dams.loc[fed_dams[f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_size'] > 0]
-    fed_dams = fed_dams.sort_values(f"{scenarios['loadCondition']}_{scenarios['breachCondition']}_size", ignore_index=True)
+    fed_dams = fed_dams.loc[fed_dams[f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}'] == True]
+    fed_dams = fed_dams.loc[fed_dams.apply(lambda x: True 
+                                           if os.path.exists(os.path.join(data_dir, 
+                                           f'NID_FIM_{scenarios["loadCondition"]}_{scenarios["breachCondition"]}', 
+                                           f'{scenarios["loadCondition"]}_{scenarios["breachCondition"]}_{x["ID"]}.tiff')
+                                           ) else False, axis=1)].reset_index(drop=True)
     fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
-    fed_dams = fed_dams.loc[fed_dams['ID'] != 'CA10104']
+    # fed_dams = fed_dams.loc[fed_dams['ID'] != 'CA10104']
     dois = fed_dams['ID'].to_list()
     dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
     print(dois)
@@ -385,7 +397,6 @@ if __name__ == "__main__":
                     "EP_GROUPQ": [['B26001_001E'], 
                                 'S0601_C01_001E'],
     }
-
 
     # Empty GeoDataFrame for storing the results
     fim_output = pd.DataFrame() # GEOID of inundated and non-inundated regions 

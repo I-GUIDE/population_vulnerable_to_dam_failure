@@ -1,13 +1,14 @@
 #!/bin/tcsh
-#SBATCH --job-name=dam
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=24
-#SBATCH --time=12:00:00
-#SBATCH --mem-per-cpu=2000MB
+#SBATCH --job-name=dam_download
+#SBATCH --partition=wholenode
+#SBATCH --nodes=1
+
+#SBATCH --time=8:00:00
 #SBATCH --mail-type=BEGIN
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-type=END
 #SBATCH --mail-user=jparkgeo@illinois.edu
+
 
 module purge
 module load gcc
