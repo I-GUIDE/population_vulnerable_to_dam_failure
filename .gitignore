@@ -1,8 +1,10 @@
 # Directories
+/NID_FIM_NH_F/
 /NID_FIM_TAS_F/
 /NID_FIM_MH_F/
 /archive/
 /TAS_F_Results/
+/NH_F_Results/
 /census_geometry/
 .DS_Store
 /census_geometry.zip
