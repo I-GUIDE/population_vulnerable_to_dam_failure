@@ -106,13 +106,13 @@ def fim_and_ellipse(dam_id, input_dir):
     # Top of Active Storage scenario (weight: 2)
     fim_path_tas = f"{input_dir}/NID_FIM_{sce_tas['loadCondition']}_{sce_tas['breachCondition']}/{sce_tas['loadCondition']}_{sce_tas['breachCondition']}_{dam_id}.tiff"
     fim_gdf_tas = polygonize_fim(fim_path_tas)
-    fim_gdf_tas['value_tas'] = fim_gdf_tas['value'] * 2
+    fim_gdf_tas['value_tas'] = fim_gdf_tas['value'] * 1
     fim_gdf_tas.drop(columns=['value'], inplace=True)
 
     # Normal Height scenario (weight: 4)
     fim_path_nh = f"{input_dir}/NID_FIM_{sce_nh['loadCondition']}_{sce_nh['breachCondition']}/{sce_nh['loadCondition']}_{sce_nh['breachCondition']}_{dam_id}.tiff"
     fim_gdf_nh = polygonize_fim(fim_path_nh)
-    fim_gdf_nh['value_nh'] = fim_gdf_nh['value'] * 4
+    fim_gdf_nh['value_nh'] = fim_gdf_nh['value'] * 1
     fim_gdf_nh.drop(columns=['value'], inplace=True)
 
     # Find intersections of inundated area across multiple scenarios
