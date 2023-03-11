@@ -8,7 +8,7 @@
 
 for i in {0..14} 
 do
-    if [ $i -lt 11 ] 
+    if [ $i -lt 13 ] 
     then 
         sbatch h4_sbatch.sbatch $i
         echo $i "Regular run"
