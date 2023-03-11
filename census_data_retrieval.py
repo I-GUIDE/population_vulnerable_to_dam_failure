@@ -2,14 +2,8 @@ import pandas as pd
 import geopandas as gpd
 import os
 import requests
-import esda
-import libpysal
 import multiprocessing as mp
 import itertools
-import pygeos
-import subprocess
-import json
-import sys
 
 def call_census_table(state_list, table_name, key):
     
@@ -26,7 +20,7 @@ def call_census_table(state_list, table_name, key):
         else:
             raise AttributeError('Proper Table Name Is Needed.')
             
-        print(state, table_name)    
+        # print(state, table_name)    
         response = requests.get(f'{address}&key={key}').json()
         result_ = pd.DataFrame(response)
         
@@ -42,7 +36,7 @@ def call_census_table(state_list, table_name, key):
     return result_df[['GEOID_T', table_name]]
 
 
-def census_data_retrieval(attr, state_list, tract, census_dic, API_Key):
+def census_data_retrieval(attr, state_list, tract, census_dic, API_Key, data_dir):
     attr_df = pd.DataFrame({'GEOID_T':tract['GEOID'].unique().tolist()})
 
     print(attr)
@@ -67,7 +61,7 @@ def census_data_retrieval(attr, state_list, tract, census_dic, API_Key):
     # Remove intermediate columns used for SVI related census calculation
     attr_df = attr_df[attr_df.columns.intersection(cols)]
 
-    attr_df.to_csv(os.path.join(data_dir, 'census_geometry', f'census_data_{attr}.csv'))
+    # attr_df.to_csv(os.path.join(data_dir, 'census_geometry', f'census_data_{attr}.csv'))
 
     return attr_df
 
@@ -107,17 +101,17 @@ if __name__ == "__main__":
     }
 
     API_Key = '5ad4c26135eaa6a049525767607eecd39e19d237' # Census api key
-    # data_dir = os.getcwd()
-    data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
+    PROCESSORS = 4
+
+    data_dir = os.getcwd()
+    # data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
+
     tract = gpd.read_file(os.path.join(data_dir, 'census_geometry', 'census_tract_from_api.geojson'))
 
     state_lookup = pd.read_csv(os.path.join(data_dir, 'census_geometry', 'state_lookup.csv'))
     state_lookup = state_lookup.loc[state_lookup['ContiguousUS'] == 1]
     state_lookup['FIPS'] = state_lookup['FIPS'].astype(str)
     state_list = list(state_lookup.apply(lambda x:x['FIPS'] if len(x['FIPS']) == 2 else '0' + x['FIPS'], axis=1))
-
-
-    PROCESSORS = 16
 
     pool = mp.Pool(PROCESSORS)
     results = pool.map(census_data_retrieval_unpacker,
@@ -126,33 +120,21 @@ if __name__ == "__main__":
                                 itertools.repeat(state_list),
                                 itertools.repeat(tract),
                                 itertools.repeat(census_dic),
-                                itertools.repeat(API_Key)
+                                itertools.repeat(API_Key),
+                                itertools.repeat(data_dir)
                                 )
                             )
 
-# attr_df = pd.DataFrame({'GEOID_T':tract['GEOID'].unique().tolist()})
+    pool.close()
 
-# for attr in census_dic.keys(): # attr: svi-related census abbriviation on the final table
-    # attr_df = pd.DataFrame({'GEOID_T':tract['GEOID'].unique().tolist()})
+    census_df = pd.DataFrame({'GEOID_T':tract['GEOID'].unique().tolist()})
 
-    # print(attr)
-    
-    # if type(census_dic[attr]) == str:
-    #     temp_table = call_census_table(state_list, census_dic[attr], API_Key)
-    #     attr_df = attr_df.merge(temp_table, on='GEOID_T')
-    #     attr_df = attr_df.rename(columns={census_dic[attr]: attr})
-    # else:
-    #     for table in census_dic[attr][0]: # Retrieve numerator variables
-    #         temp_table = call_census_table(state_list, table, API_Key)
-    #         attr_df = attr_df.merge(temp_table, on='GEOID_T')
+    for result in results:
+        census_df = census_df.merge(result, on='GEOID_T')
+        
+    census_df['GEOID_T'] = census_df['GEOID_T'].astype(str)
 
-    #     temp_table = call_census_table(state_list, census_dic[attr][1], API_Key) # Retrieve denominator variable
-    #     attr_df = attr_df.merge(temp_table, on='GEOID_T')
+    census_df.to_csv(os.path.join(data_dir, 'census_geometry', 'census_data.csv'), index=False)
+    census_df.to_json(os.path.join(data_dir, 'census_geometry', 'census_data.json'))
 
-    #     # Calculate the ratio of each variable
-    #     attr_df[attr] = attr_df[census_dic[attr][0]].sum(axis=1) / attr_df[census_dic[attr][1]] * 100
 
-    # # Remove intermediate columns used for SVI related census calculation
-    # attr_df = attr_df[attr_df.columns.intersection(cols)]
-
-    # attr_df.to_csv(os.path.join(data_dir, 'census_geometry', f'census_data_{attr}.csv'))
