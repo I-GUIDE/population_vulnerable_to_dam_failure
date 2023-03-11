@@ -159,7 +159,7 @@ def extract_fim_geoid(dam_id, input_dir, tract_gdf):
         for state_num in fim_state:
             temp_gdf = gpd.read_file(f'{input_dir}/census_geometry/tl_2020_{state_num}_tabblock20.geojson')
             census_gdf = pd.concat([temp_gdf, census_gdf]).reset_index(drop=True)
-            census_gdf = gpd.GeoDataFrame(census_gdf, geometry=census_gdf['geometry'], crs="EPSG:4326")
+        census_gdf = gpd.GeoDataFrame(census_gdf, geometry=census_gdf['geometry'], crs="EPSG:4326")
     else:
         raise AttributeError('NO STATE is related to Inundation Mapping')
 
@@ -176,7 +176,7 @@ def extract_fim_geoid(dam_id, input_dir, tract_gdf):
 
     # Extract census tract intersecting with each class of inundation map
     for water_cls in fim_gdf['value'].unique():
-        fim_geom_ = pygeos.from_shapely(fim_gdf.loc[fim_gdf['value'] == water_cls, 'geometry'].values[0])
+        fim_geom_ = pygeos.from_shapely(fim_gdf.loc[fim_gdf['value'] == water_cls, 'geometry'].unary_union)
         query_fim_geom_ = census_geoms_tree.query(fim_geom_, predicate='intersects')
         fim_geoid_ = census_gdf.loc[query_fim_geom_]
 
