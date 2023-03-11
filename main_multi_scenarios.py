@@ -153,13 +153,13 @@ def extract_fim_geoid(dam_id, input_dir, tract_gdf):
     print(f'-- {dam_id} impacts {len(fim_state)} States, {fim_state}')
 
     if len(fim_state) == 1: # If only one state is associated with the inundation mapping
-        census_gdf = gpd.read_file(f'{input_dir}/census_geometry/tl_2020_{fim_state[0]}_tabblock20.geojson')
+        block_gdf = gpd.read_file(f'{input_dir}/census_geometry/tl_2020_{fim_state[0]}_tabblock20.geojson')
     elif len(fim_state) >= 2: # If multiple states are associated with the inundation mapping
-        census_gdf = pd.DataFrame()
+        block_gdf = pd.DataFrame()
         for state_num in fim_state:
             temp_gdf = gpd.read_file(f'{input_dir}/census_geometry/tl_2020_{state_num}_tabblock20.geojson')
-            census_gdf = pd.concat([temp_gdf, census_gdf]).reset_index(drop=True)
-        census_gdf = gpd.GeoDataFrame(census_gdf, geometry=census_gdf['geometry'], crs="EPSG:4326")
+            block_gdf = pd.concat([temp_gdf, block_gdf]).reset_index(drop=True)
+        block_gdf = gpd.GeoDataFrame(block_gdf, geometry=block_gdf['geometry'], crs="EPSG:4326")
     else:
         raise AttributeError('NO STATE is related to Inundation Mapping')
 
@@ -170,15 +170,15 @@ def extract_fim_geoid(dam_id, input_dir, tract_gdf):
                                 'Class': pd.Series(dtype='str')}
                                 )    
 
-    # Create STRtree for census_gdf
-    census_geoms = pygeos.from_shapely(census_gdf['geometry'].values)
-    census_geoms_tree = pygeos.STRtree(census_geoms, leafsize=50)
+    # Create STRtree for block_gdf
+    block_geoms = pygeos.from_shapely(block_gdf['geometry'].values)
+    block_geoms_tree = pygeos.STRtree(block_geoms, leafsize=50)
 
     # Extract census tract intersecting with each class of inundation map
     for water_cls in fim_gdf['value'].unique():
         fim_geom_ = pygeos.from_shapely(fim_gdf.loc[fim_gdf['value'] == water_cls, 'geometry'].unary_union)
-        query_fim_geom_ = census_geoms_tree.query(fim_geom_, predicate='intersects')
-        fim_geoid_ = census_gdf.loc[query_fim_geom_]
+        query_fim_geom_ = block_geoms_tree.query(fim_geom_, predicate='intersects')
+        fim_geoid_ = block_gdf.loc[query_fim_geom_]
 
         for geoid_ in fim_geoid_['GEOID'].to_list():
             new_row = pd.DataFrame({'Dam_ID': dam_id, 
@@ -189,7 +189,7 @@ def extract_fim_geoid(dam_id, input_dir, tract_gdf):
             fim_geoid_df = pd.concat([new_row, fim_geoid_df]).reset_index(drop=True)
 
     print(f"{dam_id}: Step 1, 4/4, Assigning geometry to census blocks")
-    fim_geoid_gdf = fim_geoid_df.merge(census_gdf, on='GEOID')
+    fim_geoid_gdf = fim_geoid_df.merge(block_gdf, on='GEOID')
     fim_geoid_gdf = gpd.GeoDataFrame(fim_geoid_gdf, geometry=fim_geoid_gdf['geometry'], crs='EPSG:4326')
     fim_geoid_gdf['Class'] = fim_geoid_gdf['Class'].astype(int)
     fim_geoid_gdf = fim_geoid_gdf.groupby(['Dam_ID', 'GEOID'], 
@@ -293,43 +293,47 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
     return dam_local, fim_geoid_local
 
 
-def spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, API_Key):
+def spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, census_df):
     
-    # Retrieve census data from API
-    print(f"{dam_id}: Step 2, 1/2, Retrieving census data")
+    # Merging census data to FIM geoid
+    print(f"{dam_id}: Step 2, 1/2, Merging census data to FIM geoid")
     fim_geoid_gdf['GEOID_T'] = fim_geoid_gdf.apply(lambda x:x['GEOID'][0:11], axis=1)
 
-    # List of states that is associated with the dam failure
-    state_list = fim_geoid_gdf.apply(lambda x:x['GEOID'][0:2], axis=1).unique()
+    '''
+    # # List of states that is associated with the dam failure
+    # state_list = fim_geoid_gdf.apply(lambda x:x['GEOID'][0:2], axis=1).unique()
 
-    cols = list(census_dic.keys())
-    cols.append('GEOID_T')
+    # cols = list(census_dic.keys())
+    # cols.append('GEOID_T')
 
-    attr_df = pd.DataFrame({'GEOID_T':fim_geoid_gdf['GEOID_T'].unique().tolist()})
-    for attr in census_dic.keys(): # attr: svi-related census abbriviation on the final table
-        if type(census_dic[attr]) == str:
-            temp_table = call_census_table(state_list, census_dic[attr], API_Key)
-            attr_df = attr_df.merge(temp_table, on='GEOID_T')
-            attr_df = attr_df.rename(columns={census_dic[attr]: attr})
-        else:
-            for table in census_dic[attr][0]: # Retrieve numerator variables
-                temp_table = call_census_table(state_list, table, API_Key)
-                attr_df = attr_df.merge(temp_table, on='GEOID_T')
+    # attr_df = census_df.loc[census_df['GEOID_T'].isin(fim_geoid_gdf['GEOID_T'])]
 
-            temp_table = call_census_table(state_list, census_dic[attr][1], API_Key) # Retrieve denominator variable
-            attr_df = attr_df.merge(temp_table, on='GEOID_T')
+    # attr_df = pd.DataFrame({'GEOID_T':fim_geoid_gdf['GEOID_T'].unique().tolist()})
+    # for attr in census_dic.keys(): # attr: svi-related census abbriviation on the final table
+    #     if type(census_dic[attr]) == str:
+    #         temp_table = call_census_table(state_list, census_dic[attr], API_Key)
+    #         attr_df = attr_df.merge(temp_table, on='GEOID_T')
+    #         attr_df = attr_df.rename(columns={census_dic[attr]: attr})
+    #     else:
+    #         for table in census_dic[attr][0]: # Retrieve numerator variables
+    #             temp_table = call_census_table(state_list, table, API_Key)
+    #             attr_df = attr_df.merge(temp_table, on='GEOID_T')
+
+    #         temp_table = call_census_table(state_list, census_dic[attr][1], API_Key) # Retrieve denominator variable
+    #         attr_df = attr_df.merge(temp_table, on='GEOID_T')
             
-            # Calculate the ratio of each variable
-            attr_df[attr] = attr_df[census_dic[attr][0]].sum(axis=1) / attr_df[census_dic[attr][1]] * 100
+    #         # Calculate the ratio of each variable
+    #         attr_df[attr] = attr_df[census_dic[attr][0]].sum(axis=1) / attr_df[census_dic[attr][1]] * 100
 
-        # Remove intermediate columns used for SVI related census calculation
-        attr_df = attr_df[attr_df.columns.intersection(cols)]
+    #     # Remove intermediate columns used for SVI related census calculation
+    #     attr_df = attr_df[attr_df.columns.intersection(cols)]
         
-        # Replace not valid value (e.g., -666666) from census with nan value
-        attr_df[attr] = attr_df.apply(lambda x: float('nan') if x[attr] < 0 else x[attr], axis=1)
+    #     # Replace not valid value (e.g., -666666) from census with nan value
+    #     attr_df[attr] = attr_df.apply(lambda x: float('nan') if x[attr] < 0 else x[attr], axis=1)
+    '''
 
     # Merge census data with fim_geoid_gdf
-    fim_geoid_gdf = fim_geoid_gdf.merge(attr_df, on='GEOID_T')
+    fim_geoid_gdf = fim_geoid_gdf.merge(census_df, on='GEOID_T')
 
     # Reproject fim_geoid to EPSG:5070, NAD83 / Conus Albers (meters)
     fim_geoid_gdf = fim_geoid_gdf.to_crs(epsg=5070)
@@ -341,12 +345,12 @@ def spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, API_Key):
     return mi_gdf, lm_gdf
 
 
-def population_vulnerable_to_fim(dam_id, input_dir, fd_gdf, tract_gdf, census_dic, API_Key):
+def population_vulnerable_to_fim(dam_id, input_dir, fd_gdf, tract_gdf, census_dic, census_df):
     # Step 1: Compute GEOID of inundated and non-inundated regions from NID inundation mapping of each dam
     fim_geoid_gdf, fim_gdf = extract_fim_geoid(dam_id, input_dir, tract_gdf)
 
     # Step 2: Spatial correlation between fim and census data
-    mi_gdf, lm_gdf = spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, API_Key)
+    mi_gdf, lm_gdf = spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, census_df)
 
     return fim_gdf, mi_gdf, lm_gdf
 
@@ -382,7 +386,7 @@ if __name__ == "__main__":
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
 
-    API_Key = 'fbcac1c2cc26d853b42c4674adf905e742d1cb2b' # Census api key
+    # API_Key = 'fbcac1c2cc26d853b42c4674adf905e742d1cb2b' # Census api key
 
     # Find the list of dams in the input folder
     fed_dams = pd.read_csv('./nid_available_scenario.csv')
@@ -440,6 +444,10 @@ if __name__ == "__main__":
                                 'S0601_C01_001E'],
     }
 
+    # Retrieved census data (colume names are equal to census_info.keys())
+    census_data = pd.read_csv(os.path.join(data_dir, 'census_geometry', 'census_data.csv'))
+    census_data['GEOID_T'] = census_data['GEOID_T'].apply(lambda x:"{:011d}".format(x))
+
     # Empty GeoDataFrame for storing the results
     fim_output = pd.DataFrame() # GEOID of inundated and non-inundated regions 
     mi_result = pd.DataFrame() # Bivariate Moran's I result
@@ -459,7 +467,7 @@ if __name__ == "__main__":
                                 itertools.repeat(fed_dams), # GeoDataFrame of all dams
                                 itertools.repeat(tract), # GeoDataFrame of census tracts
                                 itertools.repeat(census_info), # Dictionary of census data to be retrieved
-                                itertools.repeat(API_Key) # Census API key
+                                itertools.repeat(census_data) # Census API key
                                 )
                        )
 
