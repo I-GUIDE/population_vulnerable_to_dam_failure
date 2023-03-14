@@ -242,14 +242,16 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         new_col_name = census_name.split("_")[1]
         
         # Local fim_geoid
-        fim_geoid_local_var = fim_geoid_local.loc[~fim_geoid_local[census_name].isna(), ['Dam_ID', 'GEOID', 'Class', census_name, 'geometry']].reset_index(drop=True)
+        fim_geoid_local_var = fim_geoid_local.loc[(~fim_geoid_local[census_name].isna()) & (fim_geoid_local[census_name] >= 0), 
+        ['Dam_ID', 'GEOID', 'Class', census_name, 'geometry']].reset_index(drop=True)
         
+        '''
         # Calculate Bivaraite Moran's I & Local Moran's I for various distance (Fixed Distanceband)
         max_dist = int(fim_geoid_local_var.geometry.unary_union.convex_hull.length / (2 * 3.14))
         points = fim_geoid_local_var.apply(lambda x:x['geometry'].centroid.coords[0], axis=1).to_list()
 
         dist_dic = {}
-        for dist in [1000, 2500, 5000, 7500, 10000, 25000, 50000]:  # Various threshold distance in meters
+        for dist in [1000, 2500, 5000, 7500, 10000, 25000]:  # Various threshold distance in meters
             if dist <= max_dist:
                 w = libpysal.weights.DistanceBand(points, binary=False, threshold=dist, silence_warnings=True)
                 bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)
@@ -259,6 +261,9 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         optimal_dist = max(dist_dic, key=dist_dic.get)
         
         w = libpysal.weights.DistanceBand(points, binary=False, threshold=optimal_dist, silence_warnings=True)
+        '''
+
+        w = libpysal.weights.Queen.from_dataframe(fim_geoid_local_var)  # Adjacency matrix (Queen case)
         bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)          
         bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
         
@@ -362,12 +367,22 @@ def population_vulnerable_to_fim_unpacker(args):
 ##### ------------ Main Code Starts Here ------------ #####
 
 if __name__ == "__main__":
-    PROCESSORS = 24
-    dam_count = PROCESSORS 
 
     # How many dams will be run for each sbatch submission
-    print(f"Iter: {sys.argv[1]}, Dam count: {dam_count}")
+    count_1 = 24
+    count_2 = 8
     iter_num = int(sys.argv[1])
+    if iter_num < 13:
+        dam_count = count_1
+        start_num = iter_num * count_1
+        end_num = (iter_num + 1) * count_1
+    else:
+        dam_count = count_2
+        start_num = 13 * count_1 + (iter_num-13) * count_2
+        end_num = 13 * count_1 + (iter_num-13 + 1) * count_2
+
+    print(f"Iter: {iter_num}, Dam count: {dam_count}, Range: {start_num} - {end_num}")
+    PROCESSORS = dam_count    
 
     # Multiple Scenarios
     sce_mh = {'loadCondition': 'MH', 'breachCondition': 'F'}  # Maximun Height scenario
@@ -380,7 +395,7 @@ if __name__ == "__main__":
     
     # Anvil directory
     data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
-    output_dir = os.path.join(data_dir, f'Multi_F_Results', f'N_{iter_num}')
+    output_dir = os.path.join(data_dir, f'Multi_F_Results_NWFim_Queen', f'N_{iter_num}')
     print('Output Directory: ', output_dir)
 
     if not os.path.exists(output_dir):
@@ -406,7 +421,7 @@ if __name__ == "__main__":
     print(f'Total Dams: {fed_dams.shape[0]}')
     
     dois = fed_dams['ID'].to_list()
-    dois = dois[iter_num*dam_count:(iter_num+1)*dam_count]
+    dois = dois[start_num:end_num]
     print(dois)
 
     # Census tract to find state associated with fim of each dam
