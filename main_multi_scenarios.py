@@ -245,6 +245,11 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         fim_geoid_local_var = fim_geoid_local.loc[(~fim_geoid_local[census_name].isna()) & (fim_geoid_local[census_name] >= 0), 
         ['Dam_ID', 'GEOID', 'Class', census_name, 'geometry']].reset_index(drop=True)
         
+        # Calculate Bivaraite Moran's I & Local Moran's I with Queen's Case Contiguity
+        w = libpysal.weights.Queen.from_dataframe(fim_geoid_local_var)  # Adjacency matrix (Queen case)
+        bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)          
+        bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
+
         '''
         # Calculate Bivaraite Moran's I & Local Moran's I for various distance (Fixed Distanceband)
         max_dist = int(fim_geoid_local_var.geometry.unary_union.convex_hull.length / (2 * 3.14))
@@ -261,12 +266,10 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         optimal_dist = max(dist_dic, key=dist_dic.get)
         
         w = libpysal.weights.DistanceBand(points, binary=False, threshold=optimal_dist, silence_warnings=True)
-        '''
-
-        w = libpysal.weights.Queen.from_dataframe(fim_geoid_local_var)  # Adjacency matrix (Queen case)
         bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)          
         bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
-        
+        '''
+
         '''
         # Calculate Bivaraite Moran's I & Local Moran's I using Kernel Density (k=3)
         points = fim_geoid_local_var.apply(lambda x:x['geometry'].centroid.coords[0], axis=1).to_list()
@@ -288,12 +291,12 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         fim_geoid_local_na[f'LISA_{new_col_name}'] = 'NA'
         fim_geoid_local_var = pd.concat([fim_geoid_local_var, fim_geoid_local_na]).reset_index(drop=True)       
         fim_geoid_local = fim_geoid_local.merge(fim_geoid_local_var[['GEOID', f'LISA_{new_col_name}']], on='GEOID')
-        fim_geoid_local[f'dist_{new_col_name}'] = optimal_dist
+        # fim_geoid_local[f'dist_{new_col_name}'] = optimal_dist
 
         # Enter Bivariate Moran's I result into each dam
         dam_local[f'MI_{new_col_name}'] = bv_mi.I
         dam_local[f'pval_{new_col_name}'] = bv_mi.p_z_sim
-        dam_local[f'dist_{new_col_name}'] = optimal_dist
+        # dam_local[f'dist_{new_col_name}'] = optimal_dist
 
     return dam_local, fim_geoid_local
 
