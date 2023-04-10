@@ -58,7 +58,6 @@ def polygonize_fim(rasterfile_path):
     '''
     outfile = "--outfile="+reclass_file
     no_data_val = raster_meta['bands'][0]['noDataValue']
-    # subprocess.run(["gdal_calc.py","-A",resample_path,outfile,"--calc=-9999*(A<=0)+1*((A>0)*(A<=2))+2*((A>2)*(A<=6))+3*((A>6)*(A<=15))+4*(A>15)","--NoDataValue=-9999"],stdout=subprocess.PIPE)
     subprocess.run(["gdal_calc.py","-A",resample_path,outfile,f"--calc=-9999*(A<=0)+1*(A>0)",f"--NoDataValue={no_data_val}"],stdout=subprocess.PIPE)
         
     # Polygonize the reclassified raster
@@ -91,7 +90,7 @@ def polygonize_fim(rasterfile_path):
     return inund_per_cls
 
 
-def fim_and_ellipse(dam_id, input_dir):
+def fim_multiple_scenarios(dam_id, input_dir):
     
     sce_mh = {'loadCondition': 'MH', 'breachCondition': 'F'}  # Maximun Height scenario
     sce_tas = {'loadCondition': 'TAS', 'breachCondition': 'F'}  # Top of Active Storage scenario
@@ -103,13 +102,13 @@ def fim_and_ellipse(dam_id, input_dir):
     fim_gdf_mh['value_mh'] = fim_gdf_mh['value'] * 1
     fim_gdf_mh.drop(columns=['value'], inplace=True)
 
-    # Top of Active Storage scenario (weight: 2)
+    # Top of Active Storage scenario (weight: 1)
     fim_path_tas = f"{input_dir}/NID_FIM_{sce_tas['loadCondition']}_{sce_tas['breachCondition']}/{sce_tas['loadCondition']}_{sce_tas['breachCondition']}_{dam_id}.tiff"
     fim_gdf_tas = polygonize_fim(fim_path_tas)
     fim_gdf_tas['value_tas'] = fim_gdf_tas['value'] * 1
     fim_gdf_tas.drop(columns=['value'], inplace=True)
 
-    # Normal Height scenario (weight: 4)
+    # Normal Height scenario (weight: 1)
     fim_path_nh = f"{input_dir}/NID_FIM_{sce_nh['loadCondition']}_{sce_nh['breachCondition']}/{sce_nh['loadCondition']}_{sce_nh['breachCondition']}_{dam_id}.tiff"
     fim_gdf_nh = polygonize_fim(fim_path_nh)
     fim_gdf_nh['value_nh'] = fim_gdf_nh['value'] * 1
@@ -120,7 +119,7 @@ def fim_and_ellipse(dam_id, input_dir):
     fim_gdf = gpd.overlay(temp_fim_gdf, fim_gdf_mh, how='union')
     fim_gdf.fillna(0, inplace=True)
 
-    # Sum values (1: MH only, 2: TAS only, 3: MH + TAS, 4: NH only, 5: MH + NH, 6: TAS + NH, 7: MH + TAS + NH)
+    # Sum values (1: MH only, 2: MH + TAS , 3: MH + TAS + NH)
     fim_gdf['value'] = fim_gdf.apply(lambda x:x['value_mh'] + x['value_tas'] + x['value_nh'], axis=1)
     fim_gdf.drop(columns=['value_mh', 'value_tas', 'value_nh'], inplace=True)
     fim_gdf['Dam_ID'] = dam_id
@@ -145,8 +144,8 @@ def state_num_related_to_fim(fim_gdf, tract_gdf):
     
 
 def extract_fim_geoid(dam_id, input_dir, tract_gdf):
-    print(f'{dam_id}: Step 1, 1/4, Identifying associated regions')
-    fim_gdf = fim_and_ellipse(dam_id, input_dir)
+    print(f'{dam_id}: Step 1, 1/4, Identifying associated regions for multiple scenarios')
+    fim_gdf = fim_multiple_scenarios(dam_id, input_dir)
 
     print(f'{dam_id}: Step 1, 2/4, Search states associated')
     fim_state = state_num_related_to_fim(fim_gdf, tract_gdf)
@@ -241,7 +240,7 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
     for census_name in census_dic.keys():
         new_col_name = census_name.split("_")[1]
         
-        # Local fim_geoid
+        # Remove invalid values of census data for local fim_geoid 
         fim_geoid_local_var = fim_geoid_local.loc[(~fim_geoid_local[census_name].isna()) & (fim_geoid_local[census_name] >= 0), 
         ['Dam_ID', 'GEOID', 'Class', census_name, 'geometry']].reset_index(drop=True)
         
@@ -249,35 +248,6 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         w = libpysal.weights.Queen.from_dataframe(fim_geoid_local_var)  # Adjacency matrix (Queen case)
         bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)          
         bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
-
-        '''
-        # Calculate Bivaraite Moran's I & Local Moran's I for various distance (Fixed Distanceband)
-        max_dist = int(fim_geoid_local_var.geometry.unary_union.convex_hull.length / (2 * 3.14))
-        points = fim_geoid_local_var.apply(lambda x:x['geometry'].centroid.coords[0], axis=1).to_list()
-
-        dist_dic = {}
-        for dist in [1000, 2500, 5000, 7500, 10000, 25000]:  # Various threshold distance in meters
-            if dist <= max_dist:
-                w = libpysal.weights.DistanceBand(points, binary=False, threshold=dist, silence_warnings=True)
-                bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)
-                dist_dic[dist] = bv_mi.z_sim
-
-        print(f"{dam_id}, {census_name}, Highest Z-Score at {max(dist_dic, key=dist_dic.get)} meters")
-        optimal_dist = max(dist_dic, key=dist_dic.get)
-        
-        w = libpysal.weights.DistanceBand(points, binary=False, threshold=optimal_dist, silence_warnings=True)
-        bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w)          
-        bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], w, seed=17)
-        '''
-
-        '''
-        # Calculate Bivaraite Moran's I & Local Moran's I using Kernel Density (k=3)
-        points = fim_geoid_local_var.apply(lambda x:x['geometry'].centroid.coords[0], axis=1).to_list()
-
-        kw = libpysal.weights.distance.Kernel(points, bandwidth=None, fixed=True, k=3)
-        bv_mi = esda.Moran_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], kw)          
-        bv_lm = esda.Moran_Local_BV(fim_geoid_local_var['Class'], fim_geoid_local_var[census_name], kw, seed=17)
-        '''
 
         # Enter results of Bivariate LISA into each census region
         lm_dict = {1: 'HH', 2: 'LH', 3: 'LL', 4: 'HL'}
@@ -291,12 +261,10 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
         fim_geoid_local_na[f'LISA_{new_col_name}'] = 'NA'
         fim_geoid_local_var = pd.concat([fim_geoid_local_var, fim_geoid_local_na]).reset_index(drop=True)       
         fim_geoid_local = fim_geoid_local.merge(fim_geoid_local_var[['GEOID', f'LISA_{new_col_name}']], on='GEOID')
-        # fim_geoid_local[f'dist_{new_col_name}'] = optimal_dist
 
         # Enter Bivariate Moran's I result into each dam
         dam_local[f'MI_{new_col_name}'] = bv_mi.I
         dam_local[f'pval_{new_col_name}'] = bv_mi.p_z_sim
-        # dam_local[f'dist_{new_col_name}'] = optimal_dist
 
     return dam_local, fim_geoid_local
 
@@ -306,39 +274,6 @@ def spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, census_df):
     # Merging census data to FIM geoid
     print(f"{dam_id}: Step 2, 1/2, Merging census data to FIM geoid")
     fim_geoid_gdf['GEOID_T'] = fim_geoid_gdf.apply(lambda x:x['GEOID'][0:11], axis=1)
-
-    '''
-    # # List of states that is associated with the dam failure
-    # state_list = fim_geoid_gdf.apply(lambda x:x['GEOID'][0:2], axis=1).unique()
-
-    # cols = list(census_dic.keys())
-    # cols.append('GEOID_T')
-
-    # attr_df = census_df.loc[census_df['GEOID_T'].isin(fim_geoid_gdf['GEOID_T'])]
-
-    # attr_df = pd.DataFrame({'GEOID_T':fim_geoid_gdf['GEOID_T'].unique().tolist()})
-    # for attr in census_dic.keys(): # attr: svi-related census abbriviation on the final table
-    #     if type(census_dic[attr]) == str:
-    #         temp_table = call_census_table(state_list, census_dic[attr], API_Key)
-    #         attr_df = attr_df.merge(temp_table, on='GEOID_T')
-    #         attr_df = attr_df.rename(columns={census_dic[attr]: attr})
-    #     else:
-    #         for table in census_dic[attr][0]: # Retrieve numerator variables
-    #             temp_table = call_census_table(state_list, table, API_Key)
-    #             attr_df = attr_df.merge(temp_table, on='GEOID_T')
-
-    #         temp_table = call_census_table(state_list, census_dic[attr][1], API_Key) # Retrieve denominator variable
-    #         attr_df = attr_df.merge(temp_table, on='GEOID_T')
-            
-    #         # Calculate the ratio of each variable
-    #         attr_df[attr] = attr_df[census_dic[attr][0]].sum(axis=1) / attr_df[census_dic[attr][1]] * 100
-
-    #     # Remove intermediate columns used for SVI related census calculation
-    #     attr_df = attr_df[attr_df.columns.intersection(cols)]
-        
-    #     # Replace not valid value (e.g., -666666) from census with nan value
-    #     attr_df[attr] = attr_df.apply(lambda x: float('nan') if x[attr] < 0 else x[attr], axis=1)
-    '''
 
     # Merge census data with fim_geoid_gdf
     fim_geoid_gdf = fim_geoid_gdf.merge(census_df, on='GEOID_T')
@@ -498,10 +433,6 @@ if __name__ == "__main__":
         mi_result = pd.concat([mi_result, result[1]]).reset_index(drop=True)
         lm_result = pd.concat([lm_result, result[2]]).reset_index(drop=True)
 
-    print(type(mi_result))
-    print(mi_result.columns.tolist())
-    print(type(lm_result))
-    print(lm_result.columns.tolist())
     lm_result = lm_result.to_crs(epsg=4326)
 
     fim_output.to_file(os.path.join(output_dir, f"Multi_F_fim.geojson"), driver='GeoJSON')
