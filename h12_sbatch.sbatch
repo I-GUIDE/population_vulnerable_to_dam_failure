@@ -13,4 +13,6 @@ module load gcc
 module load openmpi
 
 set var=$1
-singularity exec --bind /anvil/scratch/x-cybergis/compute/1672794633Ilt8J:/job/executable /home/x-cybergis/simages/extractinundationcensustracts-processor.sif python3 main_multi_scenarios.py $var
+singularity exec --bind /anvil/scratch/x-cybergis/compute/1672794633Ilt8J:/job/executable /anvil/projects/x-cis220065/x-cybergis/compute/extractinundationcensustracts-processor.sif python3 main_multi_scenarios.py $var
+
+# singularity exec --bind /anvil/scratch/x-cybergis/compute/1672794633Ilt8J:/job/executable /home/x-cybergis/simages/extractinundationcensustracts-processor.sif python3 main_multi_scenarios.py $var
