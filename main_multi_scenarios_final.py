@@ -86,8 +86,6 @@ def polygonize_fim(rasterfile_path):
     else:
         return gpd.GeoDataFrame(data={'value': 1}, index=[0], geometry=[None])
 
-    # inundation_per_cls: GeoDataFrame 
-    return inund_per_cls
 
 
 def fim_multiple_scenarios(dam_id, input_dir):
@@ -269,7 +267,7 @@ def calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams
     return dam_local, fim_geoid_local
 
 
-def spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, census_df):
+def spatial_correlation(dam_id, dams_gdf, fim_geoid_gdf, census_dic, census_df):
     
     # Merging census data to FIM geoid
     print(f"{dam_id}: Step 2, 1/2, Merging census data to FIM geoid")
@@ -283,17 +281,17 @@ def spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, census_df):
        
     # Calculate Bivariate Moran's I & Local Moran's I
     print(f"{dam_id}: Step 2, 2/2, Calculating Moran\'s I and LISA")
-    mi_gdf, lm_gdf = calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, fd_gdf)
+    mi_gdf, lm_gdf = calculate_bivariate_Moran_I_and_LISA(dam_id, census_dic, fim_geoid_gdf, dams_gdf)
 
     return mi_gdf, lm_gdf
 
 
-def population_vulnerable_to_fim(dam_id, input_dir, fd_gdf, tract_gdf, census_dic, census_df):
+def population_vulnerable_to_fim(dam_id, input_dir, dams_gdf, tract_gdf, census_dic, census_df):
     # Step 1: Compute GEOID of inundated and non-inundated regions from NID inundation mapping of each dam
     fim_geoid_gdf, fim_gdf = extract_fim_geoid(dam_id, input_dir, tract_gdf)
 
     # Step 2: Spatial correlation between fim and census data
-    mi_gdf, lm_gdf = spatial_correlation(dam_id, fd_gdf, fim_geoid_gdf, census_dic, census_df)
+    mi_gdf, lm_gdf = spatial_correlation(dam_id, dams_gdf, fim_geoid_gdf, census_dic, census_df)
 
     return fim_gdf, mi_gdf, lm_gdf
 
