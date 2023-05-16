@@ -19,3 +19,15 @@ Note: point colors in the map indicate the clusters of dams. The pie charts demo
 - A significant portion of dams in Upper Mississippi (50%), California (44%), New England (36%), and Texas-Gulf (32%) regions were classified as Cluster A. 
 - A substantial percentage of Cluster B (i.e., dams potentially affecting advantaged populations) was observed in Missouri (36%) and Texas-Gulf (27%) regions, while its overall percentage was 13%. 
 - Ohio and Arkansas-White-Red regions are the regions that have the largest and the second largest number of dams, but they provided a similar proportion of dams with the overall percentage. 
+
+## Employed Data <br>
+- `sample_data` folder contains sample data required for `Local_Analysis_Multi_Scenario.ipynb`.
+- the original data is stored in Keeling server (/data/cigi/common/jparkgeo/aging_dam_data).
+    - NID_FIM_MH_F: Inundation maps induced by dam failures under the Maximum Height (MH) and Breach (F) scenario. <br>
+    Source: National Inventory of Dams (NID) (https://nid.sec.usace.army.mil/viewer/index.html).
+    - NID_FIM_TAS_F: Inundation maps induced by dam failures under the Normal Height (NH) and Breach (F) scenario.  <br>
+    Source: National Inventory of Dams (NID) (https://nid.sec.usace.army.mil/viewer/index.html).
+    - NID_FIM_NH_F: Inundation maps induced by dam failures under the Top of Active Storage (TAS) and Breach scenario. <br>
+    Source: National Inventory of Dams (NID) (https://nid.sec.usace.army.mil/viewer/index.html).
+    - census_geometry: Geometry of census block, census tract, and state. <br>
+    Source: US Census Bureau (https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html)
