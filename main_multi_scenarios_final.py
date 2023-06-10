@@ -12,7 +12,7 @@ import json
 import sys
 
 
-def resample_raster(rasterfile_path, filename, target_path, rescale_factor):
+def resample_raster(rasterfile_path, filename, temp_path, rescale_factor):
     # first determine pixel size for resampling
     xres = 0
     yres = 0
@@ -27,37 +27,36 @@ def resample_raster(rasterfile_path, filename, target_path, rescale_factor):
 
     if (xres != 0) and (yres != 0):
         # resample raster
-        save_path = target_path +"/"+ filename + f"_resample.tiff"
+        save_path = temp_path +"/"+ filename + f"_resample.tiff"
         subprocess.run(["gdalwarp","-r","bilinear","-of","GTiff","-tr",str(xres),str(yres),rasterfile_path,save_path])
 
         return save_path, raster_meta
     
 
-def polygonize_fim(rasterfile_path):
+def polygonize_fim(rasterfile_path, temp_path):
 
     # Extract target path and filename from the given raster file path
-    target_path = '/'.join(rasterfile_path.split('/')[:-1])
+    # temp_path = '/'.join(rasterfile_path.split('/')[:-1])
     filename = rasterfile_path.split("/")[-1].split(".")[-2]
 
     # Define paths
-    resample_path = target_path +"/"+ filename + f"_resample.tiff"
-    reclass_file = target_path + "/" + filename + "_reclass.tiff"
-    geojson_out = "%s/%s.json" % (target_path, filename)
+    resample_path = temp_path +"/"+ filename + f"_resample.tiff"
+    reclass_file = temp_path + "/" + filename + "_reclass.tiff"
+    geojson_out = "%s/%s.json" % (temp_path, filename)
 
     for temp_path_ in [resample_path, reclass_file, geojson_out]:
         if os.path.exists(temp_path_):
             os.remove(temp_path_)
 
     # Resample raster file to 10-times smaller
-    resample_path, raster_meta = resample_raster(rasterfile_path, filename, target_path, rescale_factor=4)
+    resample_path, raster_meta = resample_raster(rasterfile_path, filename, temp_path, rescale_factor=4)
+
 
     # Reclassify raster
-    '''
-    water_lvl = [0, 2, 6, 15, np.inf]  # Original inundation map value (underwater in feet)
-    water_lvl_recls = [-9999, 1, 2, 3, 4]
-    '''
     outfile = "--outfile="+reclass_file
+    
     no_data_val = raster_meta['bands'][0]['noDataValue']
+    # subprocess.run(["gdal_calc.py","-A",resample_path,outfile,f"--calc=1*(A>0)",f"--NoDataValue={no_data_val}"],stdout=subprocess.PIPE)
     subprocess.run(["gdal_calc.py","-A",resample_path,outfile,f"--calc=-9999*(A<=0)+1*(A>0)",f"--NoDataValue={no_data_val}"],stdout=subprocess.PIPE)
         
     # Polygonize the reclassified raster
@@ -65,6 +64,7 @@ def polygonize_fim(rasterfile_path):
 
     inund_polygons = gpd.read_file(geojson_out)
 
+    # If GeoDataFrame has records
     if inund_polygons.shape[0] != 0:
         inund_polygons = inund_polygons.loc[(inund_polygons['value'] != -9999) & (inund_polygons['value'] != 0)]  # Remove pixels of null value
 
@@ -88,7 +88,7 @@ def polygonize_fim(rasterfile_path):
 
 
 
-def fim_multiple_scenarios(dam_id, input_dir):
+def fim_multiple_scenarios(dam_id, input_dir, temp_path):
     
     sce_mh = {'loadCondition': 'MH', 'breachCondition': 'F'}  # Maximun Height scenario
     sce_tas = {'loadCondition': 'TAS', 'breachCondition': 'F'}  # Top of Active Storage scenario
@@ -96,19 +96,19 @@ def fim_multiple_scenarios(dam_id, input_dir):
 
     # Maximun Height scenario (weight: 1)
     fim_path_mh = f"{input_dir}/NID_FIM_{sce_mh['loadCondition']}_{sce_mh['breachCondition']}/{sce_mh['loadCondition']}_{sce_mh['breachCondition']}_{dam_id}.tiff"
-    fim_gdf_mh = polygonize_fim(fim_path_mh)
+    fim_gdf_mh = polygonize_fim(fim_path_mh, temp_path)
     fim_gdf_mh['value_mh'] = fim_gdf_mh['value'] * 1
     fim_gdf_mh.drop(columns=['value'], inplace=True)
 
     # Top of Active Storage scenario (weight: 1)
     fim_path_tas = f"{input_dir}/NID_FIM_{sce_tas['loadCondition']}_{sce_tas['breachCondition']}/{sce_tas['loadCondition']}_{sce_tas['breachCondition']}_{dam_id}.tiff"
-    fim_gdf_tas = polygonize_fim(fim_path_tas)
+    fim_gdf_tas = polygonize_fim(fim_path_tas, temp_path)
     fim_gdf_tas['value_tas'] = fim_gdf_tas['value'] * 1
     fim_gdf_tas.drop(columns=['value'], inplace=True)
 
     # Normal Height scenario (weight: 1)
     fim_path_nh = f"{input_dir}/NID_FIM_{sce_nh['loadCondition']}_{sce_nh['breachCondition']}/{sce_nh['loadCondition']}_{sce_nh['breachCondition']}_{dam_id}.tiff"
-    fim_gdf_nh = polygonize_fim(fim_path_nh)
+    fim_gdf_nh = polygonize_fim(fim_path_nh, temp_path)
     fim_gdf_nh['value_nh'] = fim_gdf_nh['value'] * 1
     fim_gdf_nh.drop(columns=['value'], inplace=True)
 
@@ -141,9 +141,9 @@ def state_num_related_to_fim(fim_gdf, tract_gdf):
     return unique_state
     
 
-def extract_fim_geoid(dam_id, input_dir, tract_gdf):
+def extract_fim_geoid(dam_id, input_dir, temp_path, tract_gdf):
     print(f'{dam_id}: Step 1, 1/4, Identifying associated regions for multiple scenarios')
-    fim_gdf = fim_multiple_scenarios(dam_id, input_dir)
+    fim_gdf = fim_multiple_scenarios(dam_id, input_dir, temp_path)
 
     print(f'{dam_id}: Step 1, 2/4, Search states associated')
     fim_state = state_num_related_to_fim(fim_gdf, tract_gdf)
@@ -286,9 +286,9 @@ def spatial_correlation(dam_id, dams_gdf, fim_geoid_gdf, census_dic, census_df):
     return mi_gdf, lm_gdf
 
 
-def population_vulnerable_to_fim(dam_id, input_dir, dams_gdf, tract_gdf, census_dic, census_df):
+def population_vulnerable_to_fim(dam_id, input_dir, temp_path, dams_gdf, tract_gdf, census_dic, census_df):
     # Step 1: Compute GEOID of inundated and non-inundated regions from NID inundation mapping of each dam
-    fim_geoid_gdf, fim_gdf = extract_fim_geoid(dam_id, input_dir, tract_gdf)
+    fim_geoid_gdf, fim_gdf = extract_fim_geoid(dam_id, input_dir, temp_path, tract_gdf)
 
     # Step 2: Spatial correlation between fim and census data
     mi_gdf, lm_gdf = spatial_correlation(dam_id, dams_gdf, fim_geoid_gdf, census_dic, census_df)
@@ -305,6 +305,8 @@ def population_vulnerable_to_fim_unpacker(args):
 if __name__ == "__main__":
 
     # How many dams will be run for each sbatch submission
+    # For the 0-12th iteration, 24 dams will be run 
+    # For the 13th iteration, 8 dams will be run
     count_1 = 24
     count_2 = 8
     iter_num = int(sys.argv[1])
@@ -326,33 +328,30 @@ if __name__ == "__main__":
     sce_nh = {'loadCondition': 'NH', 'breachCondition': 'F'}  # Normal Height scenario
 
     # Local directory
-    # data_dir = os.getcwd()
-    # output_dir = os.path.join(data_dir, f'Multi_F_Results', f'N_{iter_num}')
+    data_dir = os.getcwd()
+    output_dir = os.path.join(data_dir, f'Multi_F_Results', f'N_{iter_num}')
+    temp_path = output_dir # Temporary directory for write GDAL results
     
     # Anvil directory
-    data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
-    output_dir = os.path.join(data_dir, f'Multi_F_Results_NWFim_Queen', f'N_{iter_num}')
+    # data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
+    # output_dir = os.path.join(data_dir, f'Multi_F_Results', f'N_{iter_num}')
+    # temp_path = output_dir # Temporary directory for write GDAL results
+    
     print('Output Directory: ', output_dir)
+    print('Temp Directory: ', temp_path)
 
     if not os.path.exists(output_dir):
-        os.mkdir(output_dir)
+        os.makedirs(output_dir)
 
     # API_Key = '' # Census api key
 
     # Find the list of dams in the input folder
-    fed_dams = pd.read_csv('./nid_available_scenario.csv')
+    fed_dams = pd.read_csv('./dam_list.csv')
 
     # Remove dams with error (fim is too small to generate)
     fed_dams = fed_dams.loc[fed_dams['ID'] != 'CO01283S001']
 
-    # Select only Fed Dams that have inundation maps.
-    for sce in [sce_mh, sce_tas, sce_nh]:
-        fed_dams = fed_dams.loc[fed_dams[f'{sce["loadCondition"]}_{sce["breachCondition"]}'] == True]
-        fed_dams = fed_dams.loc[fed_dams.apply(lambda x: True 
-                                            if os.path.exists(os.path.join(data_dir, 
-                                            f'NID_FIM_{sce["loadCondition"]}_{sce["breachCondition"]}', 
-                                            f'{sce["loadCondition"]}_{sce["breachCondition"]}_{x["ID"]}.tiff')
-                                            ) else False, axis=1)].reset_index(drop=True)
+    # Locate dams per lat/lon
     fed_dams = gpd.GeoDataFrame(fed_dams, geometry=gpd.points_from_xy(fed_dams['LON'], fed_dams['LAT'], crs="EPSG:4326"))
     print(f'Total Dams: {fed_dams.shape[0]}')
     
@@ -415,6 +414,7 @@ if __name__ == "__main__":
     results = pool.map(population_vulnerable_to_fim_unpacker,
                             zip(dois, # List of Dam_ID                                
                                 itertools.repeat(data_dir), # Input directory of NID inundation mapping
+                                itertools.repeat(temp_path), # Output directory
                                 itertools.repeat(fed_dams), # GeoDataFrame of all dams
                                 itertools.repeat(tract), # GeoDataFrame of census tracts
                                 itertools.repeat(census_info), # Dictionary of census data to be retrieved
