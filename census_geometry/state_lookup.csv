@@ -1,0 +1,57 @@
+﻿Name,Abbr,FIPS,ContiguousUS,Region
+Alabama,AL,1,1,EastSouthCentral
+Alaska,AK,2,0,Pacific
+Arizona,AZ,4,1,Mountain
+Arkansas,AR,5,1,WestSouthCentral
+California,CA,6,1,Pacific
+Colorado,CO,8,1,Mountain
+Connecticut,CT,9,1,NewEngland
+Delaware,DE,10,1,SouthAtlantic
+District of Columbia,DC,11,1,SouthAtlantic
+Florida,FL,12,1,SouthAtlantic
+Georgia,GA,13,1,SouthAtlantic
+Hawaii,HI,15,0,Pacific
+Idaho,ID,16,1,Mountain
+Illinois,IL,17,1,EastNorthCentral
+Indiana,IN,18,1,EastNorthCentral
+Iowa,IA,19,1,WestNorthCentral
+Kansas,KS,20,1,WestNorthCentral
+Kentucky,KY,21,1,EastSouthCentral
+Louisiana,LA,22,1,WestSouthCentral
+Maine,ME,23,1,NewEngland
+Maryland,MD,24,1,SouthAtlantic
+Massachusetts,MA,25,1,NewEngland
+Michigan,MI,26,1,EastNorthCentral
+Minnesota,MN,27,1,WestNorthCentral
+Mississippi,MS,28,1,EastSouthCentral
+Missouri,MO,29,1,WestNorthCentral
+Montana,MT,30,1,Mountain
+Nebraska,NE,31,1,WestNorthCentral
+Nevada,NV,32,1,Mountain
+New Hampshire,NH,33,1,NewEngland
+New Jersey,NJ,34,1,MiddleAtlantic
+New Mexico,NM,35,1,Mountain
+New York,NY,36,1,MiddleAtlantic
+North Carolina,NC,37,1,SouthAtlantic
+North Dakota,ND,38,1,WestNorthCentral
+Ohio,OH,39,1,EastNorthCentral
+Oklahoma,OK,40,1,WestSouthCentral
+Oregon,OR,41,1,Pacific
+Pennsylvania,PA,42,1,MiddleAtlantic
+Rhode Island,RI,44,1,NewEngland
+South Carolina,SC,45,1,SouthAtlantic
+South Dakota,SD,46,1,WestNorthCentral
+Tennessee,TN,47,1,EastSouthCentral
+Texas,TX,48,1,WestSouthCentral
+Utah,UT,49,1,Mountain
+Vermont,VT,50,1,NewEngland
+Virginia,VA,51,1,SouthAtlantic
+Washington,WA,53,1,Pacific
+West Virginia,WV,54,1,SouthAtlantic
+Wisconsin,WI,55,1,EastNorthCentral
+Wyoming,WY,56,1,Mountain
+American Samoa,AS,60,0,NA
+Guam,GU,66,0,NA
+Northern Mariana Islands,MP,69,0,NA
+Puerto Rico,PR,72,0,NA
+Virgin Islands,VI,78,0,NA

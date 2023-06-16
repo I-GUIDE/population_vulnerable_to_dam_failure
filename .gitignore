@@ -11,7 +11,6 @@
 /Multi_F_Results_Weights/
 # /census_geometry/
 /census_geometry/census_tract_from_api.geojson
-/census_geometry/state_lookup.csv
 /census_geometry/tl_2020_01_tabblock20.geojson
 /census_geometry/tl_2020_04_tabblock20.geojson
 /census_geometry/tl_2020_05_tabblock20.geojson
