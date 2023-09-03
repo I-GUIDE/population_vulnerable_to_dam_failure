@@ -333,9 +333,9 @@ if __name__ == "__main__":
     temp_path = output_dir # Temporary directory for write GDAL results
     
     # Anvil directory
-    # data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
-    # output_dir = os.path.join(data_dir, f'Multi_F_Results', f'N_{iter_num}')
-    # temp_path = output_dir # Temporary directory for write GDAL results
+    data_dir = '/anvil/projects/x-cis220065/x-cybergis/compute/Aging_Dams'
+    output_dir = os.path.join(data_dir, f'Multi_F_Results', f'N_{iter_num}')
+    temp_path = output_dir # Temporary directory for write GDAL results
     
     print('Output Directory: ', output_dir)
     print('Temp Directory: ', temp_path)
